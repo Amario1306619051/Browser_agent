@@ -9,6 +9,11 @@ Key feature: a **Take Over (Manual)** button. When you hit a Cloudflare / CAPTCH
 / login wall, click it — the AI pauses, you solve it yourself in the real Chromium
 window, then click **Resume AI** to continue the task from where it left off.
 
+![AI Browser Agent control panel](assets/preview.png)
+
+> The control panel: task prompt and step log on the left, a live read-only
+> preview on the right (the yellow boxes are the interactive elements the AI sees).
+
 ```
 [Control panel @ localhost:8001] ──HTTP──> [FastAPI] ──> [Agent loop] ──> [Playwright / headed Chromium]
         prompt · log · preview           start/pause/resume/stop      observe → LLM → act
