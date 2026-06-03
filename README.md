@@ -11,6 +11,11 @@ CAPTCHA / login wall, click it and then **click, type and scroll right inside th
 preview** (there's also an address bar to navigate manually). Click again to hand
 control back to the AI and it continues from where it left off.
 
+![AI Browser Agent — ChatGPT-style dashboard](assets/preview.png)
+
+> Chats on the left (each keeps its own memory), the conversation transcript in the
+> middle, and the live, interactive browser on the right.
+
 ```
 [Control panel @ localhost:8001] ──HTTP──> [FastAPI] ──> [Agent loop] ──> [Playwright / headed Chromium]
         prompt · log · preview           start/pause/resume/stop      observe → LLM → act
