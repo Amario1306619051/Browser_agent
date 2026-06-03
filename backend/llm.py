@@ -64,6 +64,9 @@ _SYSTEM = (
     "blank. For a link/URL column, copy the element's FULL href shown after '->' in the "
     "element list (not its visible text). Only record items you haven't recorded yet — "
     "after scrolling, record the NEW items, not ones already captured.\n"
+    "- Record AT MOST 5 items per record_rows call (fewer is fine). Recording too many "
+    "at once makes the JSON response too long and it gets cut off — use several smaller "
+    "record_rows calls across steps instead.\n"
     "- Use ONLY element indices that appear in the current list. The list is rebuilt "
     "every turn — never reuse an old index.\n"
     "- One clear step at a time. After typing a search query, set submit:true.\n"
@@ -186,7 +189,9 @@ def decide(task: str, obs: dict, logs: list[dict]) -> dict:
                     {"role": "user", "content": user},
                 ],
                 temperature=0.2,
-                max_tokens=700,
+                # Generous so a record_rows batch (rows of long names + URLs) is
+                # never cut off mid-JSON, which would fail to parse.
+                max_tokens=3000,
                 extra_body=_NO_THINK,
             )
             raw = resp.choices[0].message.content or ""
