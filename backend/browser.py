@@ -123,6 +123,13 @@ class Browser:
         self.page = None
         self._lock = asyncio.Lock()
         self._started = False
+        # CDP screencast: the browser pushes JPEG frames as it renders (smooth,
+        # low-CPU) instead of us polling page.screenshot. latest_frame_b64 is the
+        # last frame (base64 jpeg); frame_seq bumps on each new frame.
+        self.latest_frame_b64: str | None = None
+        self.frame_seq = 0
+        self._cdp = None
+        self._cdp_page = None
 
     async def start(self) -> None:
         if self._started:
@@ -201,14 +208,55 @@ class Browser:
         elif t == "text":
             await self.page.keyboard.type(str(msg.get("text", ""))[:2000])
 
-    async def frame_bytes(self, quality: int = 45) -> bytes:
-        """Screenshot for the live stream WITHOUT the lock. It's read-only and
-        Playwright serializes protocol calls, so it's safe to run concurrently with
-        agent ops — which keeps the stream alive even while a long navigation (goto)
-        holds the lock. Bounded by a short timeout so it can't pile up."""
+    # ---- CDP screencast (the live stream) ------------------------------------
+    def _on_screencast_frame(self, params) -> None:
+        self.latest_frame_b64 = params.get("data")
+        self.frame_seq += 1
+        sid = params.get("sessionId")
+        if sid is not None:
+            asyncio.create_task(self._ack(sid))  # must ack or frames stop coming
+
+    async def _ack(self, sid) -> None:
+        try:
+            if self._cdp:
+                await self._cdp.send("Page.screencastFrameAck", {"sessionId": sid})
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def _stop_screencast(self) -> None:
+        if self._cdp:
+            try:
+                await self._cdp.send("Page.stopScreencast")
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                await self._cdp.detach()
+            except Exception:  # noqa: BLE001
+                pass
+        self._cdp = None
+        self._cdp_page = None
+
+    async def ensure_screencast(self) -> None:
+        """(Re)attach the CDP screencast to the current page. Cheap to call on a
+        loop — it only re-attaches when the active page changes (new tab/popup)."""
+        if not self._started:
+            return
         self._sync_page()
-        return await self.page.screenshot(type="jpeg", quality=quality,
-                                          full_page=False, timeout=5000)
+        if self._cdp is not None and self._cdp_page is self.page:
+            return
+        await self._stop_screencast()
+        try:
+            cdp = await self._ctx.new_cdp_session(self.page)
+            cdp.on("Page.screencastFrame", self._on_screencast_frame)
+            await cdp.send("Page.startScreencast", {
+                "format": "jpeg", "quality": 55,
+                "maxWidth": config.VIEWPORT_W, "maxHeight": config.VIEWPORT_H,
+                "everyNthFrame": 1,
+            })
+            self._cdp = cdp
+            self._cdp_page = self.page
+        except Exception as e:  # noqa: BLE001
+            log.warning("screencast attach failed: %s", e)
 
     async def observe(self) -> dict:
         # Wait for load OUTSIDE the lock so a slow page can't hold it for 8s.
@@ -333,6 +381,7 @@ class Browser:
 
     async def close(self) -> None:
         try:
+            await self._stop_screencast()
             if self._ctx:
                 await self._ctx.close()
             if self._pw:

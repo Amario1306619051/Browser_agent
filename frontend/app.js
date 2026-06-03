@@ -265,11 +265,19 @@ function pageCoords(e) {
 screen.addEventListener("click", (e) => { if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "left" }); screenWrap.focus({ preventScroll: true }); });
 screen.addEventListener("dblclick", (e) => { if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "left", clicks: 2 }); });
 screen.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "right" }); });
+let scrollDX = 0, scrollDY = 0, scrollTimer = null;
+function flushScroll() {
+  scrollTimer = null;
+  if (scrollDX || scrollDY) { wsSend({ t: "scroll", dx: scrollDX, dy: scrollDY }); scrollDX = scrollDY = 0; }
+}
 screen.addEventListener("wheel", (e) => {
   if (!interactive) return; e.preventDefault();
   let dx = e.deltaX, dy = e.deltaY;
   if (e.deltaMode === 1) { dx *= 16; dy *= 16; } else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
-  wsSend({ t: "scroll", dx: dx, dy: dy });
+  // Coalesce rapid wheel events into one message per frame so we don't flood the
+  // server (and the page scrolls in fewer, bigger, smoother steps).
+  scrollDX += dx; scrollDY += dy;
+  if (!scrollTimer) scrollTimer = setTimeout(flushScroll, 30);
 }, { passive: false });
 const SPECIAL_KEYS = { Enter: 1, Backspace: 1, Escape: 1, Delete: 1, Home: 1, End: 1, PageUp: 1, PageDown: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1 };
 screenWrap.addEventListener("keydown", (e) => {

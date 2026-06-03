@@ -11,7 +11,6 @@ Serves the vanilla frontend and a tiny API:
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,9 +33,9 @@ session = AgentSession()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # Stop the frame producer and close Chromium on shutdown.
-    if _producer is not None:
-        _producer.cancel()
+    # Stop the screencast manager and close Chromium on shutdown.
+    if _manager is not None:
+        _manager.cancel()
     await session.browser.close()
 
 
@@ -142,55 +141,57 @@ def _input_allowed() -> bool:
     return session.browser.started and session.state != "running"
 
 
-# One shared frame producer feeds ALL dashboard tabs: a single lock-free screenshot
-# loop, so N WebSocket clients don't each contend on the browser lock, and the
-# stream keeps flowing even while a long navigation holds the lock for the agent.
-_frame: dict = {"data": None}
-_producer: asyncio.Task | None = None
+# Single CDP-screencast manager: re-attaches the browser's screencast to the active
+# page (handles new tabs/popups). Frames arrive into browser.latest_frame_b64 as the
+# page renders. Per-tab pumps just forward the latest frame — no screenshotting — so
+# the stream is smooth and N tabs don't multiply the cost.
+_manager: asyncio.Task | None = None
 
 
-async def _frame_producer():
+async def _screencast_manager():
     while True:
         try:
-            if session.browser.started:
-                _frame["data"] = await session.browser.frame_bytes(quality=45)
-        except Exception:  # noqa: BLE001 — mid-navigation / closing page
+            await session.browser.ensure_screencast()
+        except Exception:  # noqa: BLE001
             pass
-        await asyncio.sleep(0.1 if _input_allowed() else 0.25)
+        await asyncio.sleep(0.5)
 
 
-def _ensure_producer() -> None:
-    global _producer
-    if _producer is None or _producer.done():
-        _producer = asyncio.create_task(_frame_producer())
+def _ensure_manager() -> None:
+    global _manager
+    if _manager is None or _manager.done():
+        _manager = asyncio.create_task(_screencast_manager())
 
 
 @app.websocket("/ws/screen")
 async def ws_screen(ws: WebSocket):
     """Live browser stream into the dashboard + manual input forwarding.
 
-    The server pushes JPEG frames (from the shared producer); the client sends
-    click/scroll/key/text events, applied only when the AI isn't running (manual
-    takeover, re-checked under the lock in session.manual_input).
+    Frames come from a CDP screencast (the browser pushes them as it renders); the
+    client sends click/scroll/key/text events, applied only when the AI isn't
+    running (manual takeover, re-checked under the lock in session.manual_input).
     """
     await ws.accept()
-    _ensure_producer()
+    _ensure_manager()
 
     async def pump():
+        last_seq, last_int = -1, None
         while True:
-            data = _frame["data"]
-            if data is not None:
+            b = session.browser
+            inter = _input_allowed()
+            if b.latest_frame_b64 is not None and (b.frame_seq != last_seq or inter != last_int):
+                last_seq, last_int = b.frame_seq, inter
                 try:
                     await ws.send_json({
                         "t": "frame",
-                        "img": base64.b64encode(data).decode("ascii"),
+                        "img": b.latest_frame_b64,
                         "w": config.VIEWPORT_W,
                         "h": config.VIEWPORT_H,
-                        "interactive": _input_allowed(),
+                        "interactive": inter,
                     })
                 except Exception:  # noqa: BLE001 — client gone
                     return
-            await asyncio.sleep(0.1 if _input_allowed() else 0.25)
+            await asyncio.sleep(0.03)
 
     pump_task = asyncio.create_task(pump())
     try:
