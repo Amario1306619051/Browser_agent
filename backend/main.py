@@ -61,9 +61,27 @@ async def start(req: StartReq):
 
 @app.get("/api/thread")
 async def thread(id: str = ""):
-    """Indicator for the UI: does this thread_id already have memory?"""
+    """Indicator: does this thread_id already have memory?"""
     c = store.count(id)
     return {"id": store.norm(id), "exists": c > 0, "count": c}
+
+
+@app.get("/api/threads")
+async def threads():
+    """Sidebar list of chats (one per thread_id)."""
+    return {"threads": store.list_threads()}
+
+
+@app.get("/api/thread/history")
+async def thread_history(id: str = ""):
+    """Full transcript (task + result turns) for one thread."""
+    return {"id": store.norm(id), "turns": store.history(id)}
+
+
+@app.delete("/api/thread")
+async def thread_delete(id: str = ""):
+    store.delete(id)
+    return {"ok": True}
 
 
 @app.post("/api/pause")

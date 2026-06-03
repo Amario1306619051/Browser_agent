@@ -113,6 +113,57 @@ class Memory:
             log.warning("memory.load failed: %s", e)
             return []
 
+    def history(self, thread_id: str | None, limit: int = 200) -> list[dict]:
+        """ALL turns for a thread (oldest → newest), for the chat transcript."""
+        tid = self.norm(thread_id)
+        if not self.ok or not tid:
+            return []
+        try:
+            with self._lock:
+                cur = self._conn.cursor()
+                cur.execute(
+                    f"SELECT task, result, ts FROM thread_memory WHERE thread_id={self._ph} "
+                    f"ORDER BY id ASC LIMIT {self._ph}",
+                    (tid, int(limit)),
+                )
+                rows = cur.fetchall()
+            return [{"task": r[0], "result": r[1], "ts": r[2]} for r in rows]
+        except Exception as e:  # noqa: BLE001
+            log.warning("memory.history failed: %s", e)
+            return []
+
+    def list_threads(self, limit: int = 100) -> list[dict]:
+        """One row per thread: id, turn count, title (the first task), last activity."""
+        if not self.ok:
+            return []
+        try:
+            with self._lock:
+                cur = self._conn.cursor()
+                cur.execute(
+                    "SELECT t.thread_id, c.n, t.task, c.last_ts FROM thread_memory t "
+                    "JOIN (SELECT thread_id, COUNT(*) AS n, MIN(id) AS first_id, MAX(ts) AS last_ts "
+                    "FROM thread_memory GROUP BY thread_id) c ON t.id = c.first_id "
+                    f"ORDER BY c.last_ts DESC LIMIT {self._ph}",
+                    (int(limit),),
+                )
+                rows = cur.fetchall()
+            return [{"thread_id": r[0], "count": int(r[1]), "title": r[2], "last_ts": r[3]} for r in rows]
+        except Exception as e:  # noqa: BLE001
+            log.warning("memory.list_threads failed: %s", e)
+            return []
+
+    def delete(self, thread_id: str | None) -> None:
+        tid = self.norm(thread_id)
+        if not self.ok or not tid:
+            return
+        try:
+            with self._lock:
+                cur = self._conn.cursor()
+                cur.execute(f"DELETE FROM thread_memory WHERE thread_id={self._ph}", (tid,))
+                self._commit()
+        except Exception as e:  # noqa: BLE001
+            log.warning("memory.delete failed: %s", e)
+
     def append(self, thread_id: str | None, task: str, result: str) -> None:
         tid = self.norm(thread_id)
         if not self.ok or not tid:

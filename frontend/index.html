@@ -7,67 +7,43 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">🤖 AI Browser Agent</div>
-    <div class="state-chip" id="stateChip">idle</div>
-  </header>
+  <div class="app">
+    <!-- Sidebar: chats -->
+    <aside class="sidebar">
+      <button id="newChatBtn" class="new-chat">＋ New chat</button>
+      <div id="threadList" class="thread-list"></div>
+      <div class="brand">🤖 AI Browser Agent</div>
+    </aside>
 
-  <main>
-    <!-- Left: control + log -->
-    <section class="panel">
-      <div class="card">
-        <label class="lbl">Task for the AI (prompt)</label>
-        <textarea id="task" rows="3" placeholder="e.g. Open Wikipedia, find the article about Borobudur, and tell me the year it was built"></textarea>
-        <label class="lbl">Start URL (optional)</label>
-        <input id="startUrl" type="text" placeholder="leave empty to let the AI decide — e.g. https://google.com" />
-        <label class="lbl">Thread ID — short-term memory
-          <span id="threadBadge" class="thread-badge none">no memory</span>
-        </label>
-        <input id="threadId" type="text" placeholder="e.g. shopping-1 — reuse the same ID so the AI remembers context (optional)" />
-        <div class="row">
-          <button id="startBtn" class="primary">▶ Start</button>
-          <button id="stopBtn" class="ghost" disabled>■ Stop</button>
+    <!-- Chat column -->
+    <section class="chat">
+      <header class="chat-head">
+        <div id="chatTitle" class="chat-title">New chat</div>
+        <span class="state-chip" id="stateChip">idle</span>
+      </header>
+
+      <div id="transcript" class="transcript">
+        <div id="emptyHint" class="empty-hint">
+          Ask the agent to browse, extract data to CSV/Excel, or take a screenshot.<br>
+          Stay in the same chat and it remembers the context.
         </div>
       </div>
 
-      <div class="card takeover">
-        <div class="takeover-head">
-          <span>Manual control</span>
-          <span class="mode-dot" id="modeDot"></span>
+      <div class="composer">
+        <div id="artifacts" class="artifacts" hidden></div>
+        <div class="composer-tools">
+          <input id="startUrl" class="start-url" type="text" placeholder="Start URL (optional)" />
+          <button id="toggleBtn" class="mini-btn" disabled>✋ Take Over</button>
+          <button id="stopBtn" class="mini-btn" disabled>■ Stop</button>
         </div>
-        <p class="hint">If you hit a Cloudflare / CAPTCHA / login wall, click this button to
-          take over — then <b>click, type and scroll right here in the preview</b>. Click again
-          to hand control back to the AI.</p>
-        <button id="toggleBtn" class="toggle" disabled>✋ Take Over (Manual)</button>
-      </div>
-
-      <div class="card result-card" id="resultCard" hidden>
-        <div class="lbl">Result</div>
-        <div id="resultText"></div>
-      </div>
-
-      <div class="card export-card" id="exportCard" hidden>
-        <div class="lbl">Data / Export</div>
-        <div id="exportInfo" class="export-info"></div>
-        <div class="row" id="exportBtns">
-          <button id="exportCsvBtn" class="ghost">⬇ Export CSV</button>
-          <button id="exportXlsxBtn" class="ghost">⬇ Export Excel</button>
+        <div class="composer-row">
+          <textarea id="task" rows="1" placeholder="Message the agent…  (e.g. find the cheapest 4GB flashdisk on Tokopedia and export a CSV)"></textarea>
+          <button id="startBtn" class="send" title="Send">➤</button>
         </div>
-        <a id="downloadLink" class="dl-btn" href="#" download hidden>⬇ Download</a>
-      </div>
-
-      <div class="card shots-card" id="shotsCard" hidden>
-        <div class="lbl">Screenshots</div>
-        <div id="shotsGrid" class="shots-grid"></div>
-      </div>
-
-      <div class="card log-card">
-        <div class="lbl">Step log <span id="stepCount" class="muted"></span></div>
-        <div id="log" class="log"></div>
       </div>
     </section>
 
-    <!-- Right: live interactive browser -->
+    <!-- Browser preview -->
     <section class="preview">
       <div class="preview-bar">
         <input id="goUrl" class="go-url" type="text" placeholder="Go to URL…  (https://…)" />
@@ -77,11 +53,11 @@
       </div>
       <div class="shot-wrap" id="screenWrap" tabindex="0">
         <img id="screen" alt="browser" draggable="false" />
-        <div id="screenEmpty" class="shot-empty">Browser not running yet.<br>Start a task (or type a URL above) to open it here.</div>
+        <div id="screenEmpty" class="shot-empty">Browser not running yet.<br>Send a message to open it here.</div>
         <div id="viewOnly" class="view-only-overlay" hidden aria-hidden="true">AI is driving — click <b>Take Over</b> to interact</div>
       </div>
     </section>
-  </main>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>
