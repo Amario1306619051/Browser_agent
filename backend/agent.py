@@ -18,6 +18,7 @@ import re
 import time
 
 import config
+import exporter
 import llm
 from browser import Browser
 
@@ -40,6 +41,10 @@ def _fmt_action(d: dict) -> str:
         return "go back"
     if a == "request_manual":
         return f"request manual: {d.get('reason', '')}"
+    if a == "record_rows":
+        return f"record {len(d.get('rows') or [])} row(s)"
+    if a == "export":
+        return f"export {d.get('format', 'xlsx')}: {d.get('filename', 'export')}"
     if a == "done":
         return f"done: {d.get('answer', '')}"
     return str(a)
@@ -59,6 +64,10 @@ class AgentSession:
         self._stop = False
         self._runner: asyncio.Task | None = None
         self._safety_ack = False  # set when a sensitive action was already flagged
+        # Data the agent collects during a run, for CSV/XLSX export.
+        self.data_rows: list[dict] = []
+        self.data_columns: list[str] = []
+        self.last_export: dict | None = None
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
     # phrase list covers English and Indonesian site labels to keep it useful on
@@ -81,6 +90,13 @@ class AgentSession:
             if e.get("index") == idx:
                 return bool(self._DANGER_RE.search(e.get("label", "") or ""))
         return False
+
+    def _export(self, filename: str, fmt: str, columns=None) -> dict:
+        ref = exporter.write_table(
+            self.data_rows, filename, fmt, columns or self.data_columns or None
+        )
+        self.last_export = ref
+        return ref
 
     # ---- logging -------------------------------------------------------------
     def _log(self, kind: str, text: str, **extra) -> None:
@@ -113,6 +129,9 @@ class AgentSession:
         self.result = ""
         self._stop = False
         self._safety_ack = False
+        self.data_rows = []
+        self.data_columns = []
+        self.last_export = None
         if self.ai_enabled is None:
             self.ai_enabled = asyncio.Event()
         self.ai_enabled.set()
@@ -163,6 +182,13 @@ class AgentSession:
                 action = decision.get("action")
 
                 if action == "done":
+                    # Don't lose collected data if the model forgot to export.
+                    if self.data_rows and not self.last_export:
+                        try:
+                            ref = self._export("export", "xlsx")
+                            self._log("file", f"auto-exported {ref['rows']} row(s) → {ref['filename']}")
+                        except Exception as e:  # noqa: BLE001
+                            self._log("error", f"auto-export failed: {e}")
                     self.result = str(decision.get("answer", "(done)"))
                     self.state = "done"
                     self._log("done", self.result)
@@ -172,6 +198,32 @@ class AgentSession:
                     self.ai_enabled.clear()
                     self._log("manual", f"⏸ AI requested manual takeover: {decision.get('reason', '')}")
                     continue  # top of loop handles overlay-clear + wait
+
+                if action == "record_rows":
+                    rows = decision.get("rows")
+                    if isinstance(rows, list):
+                        clean = [r for r in rows if isinstance(r, dict)]
+                        self.data_rows.extend(clean)
+                        for r in clean:
+                            for k in r.keys():
+                                if str(k) not in self.data_columns:
+                                    self.data_columns.append(str(k))
+                        self._log("result", f"recorded {len(clean)} row(s) (total {len(self.data_rows)})")
+                    else:
+                        self._log("error", "record_rows needs a 'rows' list")
+                    continue
+
+                if action == "export":
+                    try:
+                        ref = self._export(
+                            decision.get("filename") or "export",
+                            decision.get("format") or "xlsx",
+                            decision.get("columns"),
+                        )
+                        self._log("file", f"exported {ref['rows']} row(s) → {ref['filename']}")
+                    except Exception as e:  # noqa: BLE001
+                        self._log("error", f"export failed: {e}")
+                    continue
 
                 # Sensitive-action guard: pause once for the human. On resume the
                 # loop re-decides; if it picks the same flagged action again the ack
@@ -229,5 +281,7 @@ class AgentSession:
             "url": self.last_url,
             "title": self.last_title,
             "result": self.result,
+            "data_rows": len(self.data_rows),
+            "export": self.last_export,
             "logs": self.logs[-100:],
         }

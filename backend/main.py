@@ -76,6 +76,15 @@ async def status():
     return session.status()
 
 
+@app.get("/output/{name}")
+async def download(name: str):
+    # Path(name).name strips any path components — only serve flat files in OUTPUT_DIR.
+    path = config.OUTPUT_DIR / Path(name).name
+    if not path.is_file():
+        return Response(status_code=404)
+    return FileResponse(path, filename=path.name)
+
+
 @app.get("/api/screenshot")
 async def screenshot():
     try:

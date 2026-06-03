@@ -27,6 +27,15 @@ window, then click **Resume AI** to continue the task from where it left off.
 If the agent runs into a bot-check, it can choose the `request_manual` action
 itself — which auto-pauses and asks you to take over.
 
+### CSV / Excel export
+
+Ask it to compile data and it will (e.g. *"go through this product list and make
+an Excel with columns name, price, link"*). As the agent reads each item it
+collects rows (`record_rows`), then writes a `.xlsx` or `.csv` file (`export`) to
+`output/`. A **Download** button appears in the panel; files are also served at
+`/output/<filename>`. If the run ends with uncollected rows still pending, they're
+auto-exported so nothing is lost.
+
 ## Setup
 
 ```bash

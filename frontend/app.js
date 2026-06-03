@@ -12,6 +12,9 @@ const logEl = $("log");
 const stepCount = $("stepCount");
 const resultCard = $("resultCard");
 const resultText = $("resultText");
+const exportCard = $("exportCard");
+const exportInfo = $("exportInfo");
+const downloadLink = $("downloadLink");
 const urlBar = $("urlBar");
 const shot = $("shot");
 const shotEmpty = $("shotEmpty");
@@ -51,7 +54,7 @@ toggleBtn.onclick = async () => {
 
 const KIND_LABEL = {
   think: "💭", action: "▶", result: "✓", manual: "✋",
-  done: "★", error: "✕", info: "·",
+  done: "★", error: "✕", info: "·", file: "📄",
 };
 
 function renderLogs(logs) {
@@ -105,6 +108,23 @@ function applyState(s) {
     resultText.textContent = s.result;
   } else {
     resultCard.hidden = true;
+  }
+
+  // Data / export card: show a download button once a file is written, or a live
+  // "collected N rows" count while the agent is still gathering.
+  if (s.export) {
+    exportCard.hidden = false;
+    exportInfo.textContent = `${s.export.rows} rows · ${s.export.columns.join(", ")}`;
+    downloadLink.style.display = "inline-block";
+    downloadLink.href = s.export.url;
+    downloadLink.textContent = "⬇ Download " + s.export.filename;
+    downloadLink.setAttribute("download", s.export.filename);
+  } else if (s.data_rows) {
+    exportCard.hidden = false;
+    exportInfo.textContent = `${s.data_rows} rows collected (not exported yet)`;
+    downloadLink.style.display = "none";
+  } else {
+    exportCard.hidden = true;
   }
 
   renderLogs(s.logs || []);

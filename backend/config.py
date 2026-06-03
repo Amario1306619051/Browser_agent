@@ -7,6 +7,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Where exported CSV/XLSX files are written (and served from).
+OUTPUT_DIR = BASE_DIR / "output"
+
 
 def _load_dotenv() -> None:
     """Minimal .env loader (no python-dotenv dependency needed). Lines like

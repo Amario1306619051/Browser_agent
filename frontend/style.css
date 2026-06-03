@@ -112,6 +112,20 @@ button:not(:disabled):hover { filter: brightness(1.12); }
 .result-card { border-color: var(--green); }
 #resultText { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
 
+.export-card { border-color: #3b82f6; }
+.export-info { font-size: 13px; color: var(--text); margin-bottom: 10px; }
+.dl-btn {
+  display: inline-block;
+  background: #3b82f6;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 9px 14px;
+  border-radius: 8px;
+}
+.dl-btn:hover { filter: brightness(1.12); }
+
 .log-card { flex: 1; display: flex; flex-direction: column; min-height: 220px; }
 .log {
   flex: 1;
@@ -128,6 +142,7 @@ button:not(:disabled):hover { filter: brightness(1.12); }
 .log-line.result { border-color: #3b82f6; color: #b9c7e6; }
 .log-line.manual { border-color: var(--orange); color: var(--orange); }
 .log-line.done   { border-color: var(--green); color: var(--green); }
+.log-line.file   { border-color: #3b82f6; color: #9db8f0; }
 .log-line.error  { border-color: var(--red); color: var(--red); }
 .log-line.info   { border-color: var(--line); color: var(--muted); }
 

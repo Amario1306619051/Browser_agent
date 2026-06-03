@@ -51,8 +51,15 @@ _SYSTEM = (
     "- {\"action\":\"go_back\"}                                      browser back\n"
     "- {\"action\":\"wait\",\"seconds\":2}                            wait for the page to settle\n"
     "- {\"action\":\"request_manual\",\"reason\":\"...\"}             hand control to the human\n"
+    "- {\"action\":\"record_rows\",\"rows\":[{\"col\":\"val\",...}]}    collect data rows for a table/CSV/Excel\n"
+    "- {\"action\":\"export\",\"format\":\"xlsx|csv\",\"filename\":\"...\",\"columns\":[...]}  write the collected rows to a file\n"
     "- {\"action\":\"done\",\"success\":true,\"answer\":\"<result for the user>\"}  task finished\n\n"
     "Rules:\n"
+    "- If the task asks to compile/collect data into a table, list, CSV, or Excel: as you "
+    "read each item (scroll / paginate as needed), call record_rows with one object per "
+    "item, using EXACTLY the column names the user asked for as keys. Call record_rows "
+    "across as many steps as you need, then call export once at the end (format 'xlsx' for "
+    "Excel, 'csv' otherwise). Don't dump everything in one giant action — record in batches.\n"
     "- Use ONLY element indices that appear in the current list. The list is rebuilt "
     "every turn — never reuse an old index.\n"
     "- One clear step at a time. After typing a search query, set submit:true.\n"
@@ -141,6 +148,8 @@ def _validate(decision: dict, obs: dict) -> None:
             raise ValueError(f"action '{action}' has invalid/out-of-range index {idx!r}")
     if action == "navigate" and not str(decision.get("url", "")).strip():
         raise ValueError("action 'navigate' is missing 'url'")
+    if action == "record_rows" and not isinstance(decision.get("rows"), list):
+        raise ValueError("action 'record_rows' requires a 'rows' array")
 
 
 def decide(task: str, obs: dict, logs: list[dict]) -> dict:

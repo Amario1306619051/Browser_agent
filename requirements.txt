@@ -1,6 +1,7 @@
 fastapi>=0.110
 uvicorn[standard]>=0.27
 pydantic>=2.6
-openai>=1.0          # vLLM client (OpenAI-compatible endpoint) — the agent brain
+openai>=1.0          # LLM client (OpenAI-compatible endpoint) — the agent brain
 playwright>=1.44     # headed Chromium automation
+openpyxl>=3.1        # XLSX export (CSV uses the stdlib)
 # After install:  python -m playwright install chromium
