@@ -18,14 +18,18 @@ const exportBtns = $("exportBtns");
 const exportCsvBtn = $("exportCsvBtn");
 const exportXlsxBtn = $("exportXlsxBtn");
 const downloadLink = $("downloadLink");
-const urlBar = $("urlBar");
 const captureBtn = $("captureBtn");
 const shotsCard = $("shotsCard");
 const shotsGrid = $("shotsGrid");
-const shot = $("shot");
-const shotEmpty = $("shotEmpty");
+// interactive browser preview
+const goUrl = $("goUrl");
+const goBtn = $("goBtn");
+const modeBadge = $("modeBadge");
+const screenWrap = $("screenWrap");
+const screen = $("screen");
+const screenEmpty = $("screenEmpty");
+const viewOnly = $("viewOnly");
 
-let lastState = "idle";
 let aiEnabled = true;
 let renderedLogTs = 0;
 
@@ -40,10 +44,7 @@ startBtn.onclick = async () => {
   const task = taskEl.value.trim();
   if (!task) { taskEl.focus(); return; }
   startBtn.disabled = true;
-  const res = await api("/api/start", {
-    task,
-    start_url: startUrlEl.value.trim() || null,
-  });
+  const res = await api("/api/start", { task, start_url: startUrlEl.value.trim() || null });
   if (!res.ok) {
     alert("Failed to start: " + (res.error || "unknown"));
     startBtn.disabled = false;
@@ -51,6 +52,8 @@ startBtn.onclick = async () => {
 };
 
 stopBtn.onclick = () => api("/api/stop");
+
+toggleBtn.onclick = () => api(aiEnabled ? "/api/pause" : "/api/resume");
 
 async function doExport(fmt) {
   const res = await api("/api/export?fmt=" + fmt);
@@ -66,44 +69,118 @@ captureBtn.onclick = async () => {
   else poll();
 };
 
-let renderedShots = 0;
-function renderShots(shots) {
-  shots = shots || [];
-  if (shots.length === renderedShots) return;  // only re-render on change
-  renderedShots = shots.length;
-  shotsCard.hidden = shots.length === 0;
-  shotsGrid.innerHTML = "";
-  for (const s of shots) {
-    const a = document.createElement("a");
-    a.href = s.url;
-    a.download = s.filename;
-    a.title = s.filename;
-    a.className = "shot-thumb";
-    const img = document.createElement("img");
-    img.src = s.url;
-    img.alt = s.filename;
-    a.appendChild(img);
-    shotsGrid.appendChild(a);
+goBtn.onclick = async () => {
+  const url = goUrl.value.trim();
+  if (!url) return;
+  const res = await api("/api/goto", { url });
+  if (!res.ok) alert("Go failed: " + (res.error || "unknown"));
+};
+goUrl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.stopPropagation(); goBtn.onclick(); }
+});
+
+// ---- live interactive browser (WebSocket stream + input forwarding) ----------
+let ws = null;
+let frameW = 1280, frameH = 800;
+let interactive = false;
+let wsConnecting = false;
+
+function connectWS() {
+  if (wsConnecting) return;  // guard against double-connect / reconnect storms
+  wsConnecting = true;
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(proto + "//" + location.host + "/ws/screen");
+  ws.onopen = () => { wsConnecting = false; };
+  ws.onmessage = (ev) => {
+    let m;
+    try { m = JSON.parse(ev.data); } catch (_) { return; }
+    if (m.t !== "frame") return;
+    frameW = m.w; frameH = m.h;
+    interactive = !!m.interactive;
+    screen.src = "data:image/jpeg;base64," + m.img;
+    screen.style.display = "block";
+    screenEmpty.style.display = "none";
+    paintMode();
+  };
+  ws.onclose = () => { wsConnecting = false; setTimeout(connectWS, 1000); };  // auto-reconnect
+  ws.onerror = () => {};  // onclose handles the reconnect
+}
+function wsSend(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+
+function paintMode() {
+  if (interactive) {
+    modeBadge.textContent = "interactive";
+    modeBadge.className = "mode-badge live";
+    viewOnly.hidden = true;
+    screen.style.cursor = "crosshair";
+  } else {
+    modeBadge.textContent = "view-only (AI)";
+    modeBadge.className = "mode-badge view";
+    viewOnly.hidden = false;
+    screen.style.cursor = "default";
   }
 }
 
-toggleBtn.onclick = async () => {
-  // aiEnabled true  -> we want to PAUSE (take over)
-  // aiEnabled false -> we want to RESUME (hand back to AI)
-  await api(aiEnabled ? "/api/pause" : "/api/resume");
-};
+function pageCoords(e) {
+  const r = screen.getBoundingClientRect();
+  const nw = screen.naturalWidth || frameW;
+  const nh = screen.naturalHeight || frameH;
+  const x = (e.clientX - r.left) / r.width * nw;
+  const y = (e.clientY - r.top) / r.height * nh;
+  return { x: Math.max(0, Math.min(x, nw)), y: Math.max(0, Math.min(y, nh)) };
+}
 
+screen.addEventListener("click", (e) => {
+  if (!interactive) return;
+  const p = pageCoords(e);
+  wsSend({ t: "click", x: p.x, y: p.y, button: "left" });
+  screenWrap.focus({ preventScroll: true });
+});
+screen.addEventListener("dblclick", (e) => {
+  if (!interactive) return;
+  const p = pageCoords(e);
+  wsSend({ t: "click", x: p.x, y: p.y, button: "left", clicks: 2 });
+});
+screen.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  if (!interactive) return;
+  const p = pageCoords(e);
+  wsSend({ t: "click", x: p.x, y: p.y, button: "right" });
+});
+screen.addEventListener("wheel", (e) => {
+  if (!interactive) return;
+  e.preventDefault();
+  // Normalize delta units (lines/pages → pixels) so scroll feels the same everywhere.
+  let dx = e.deltaX, dy = e.deltaY;
+  if (e.deltaMode === 1) { dx *= 16; dy *= 16; }
+  else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
+  wsSend({ t: "scroll", dx: dx, dy: dy });
+}, { passive: false });
+
+const SPECIAL_KEYS = {
+  Enter: 1, Backspace: 1, Escape: 1, Delete: 1, Home: 1, End: 1,
+  PageUp: 1, PageDown: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1,
+};
+screenWrap.addEventListener("keydown", (e) => {
+  if (!interactive) return;
+  // Never steal keys from the text fields (Tab stays native too).
+  const a = document.activeElement;
+  if (a === goUrl || a === taskEl || a === startUrlEl) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;  // don't hijack shortcuts
+  if (SPECIAL_KEYS[e.key]) { wsSend({ t: "key", key: e.key }); e.preventDefault(); }
+  else if (e.key.length === 1) { wsSend({ t: "text", text: e.key }); e.preventDefault(); }
+});
+
+// ---- status polling (logs / result / export / shots / toggle) ----------------
 const KIND_LABEL = {
   think: "💭", action: "▶", result: "✓", manual: "✋",
   done: "★", error: "✕", info: "·", file: "📄",
 };
 
 function renderLogs(logs) {
-  // Re-render only when there's something new (cheap: compare last ts).
   const newest = logs.length ? logs[logs.length - 1].ts : 0;
   if (newest === renderedLogTs) return;
   renderedLogTs = newest;
-
   logEl.innerHTML = "";
   for (const l of logs) {
     const div = document.createElement("div");
@@ -118,10 +195,25 @@ function renderLogs(logs) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function applyState(s) {
-  lastState = s.state;
-  aiEnabled = s.ai_enabled;
+let renderedShots = 0;
+function renderShots(shots) {
+  shots = shots || [];
+  if (shots.length === renderedShots) return;
+  renderedShots = shots.length;
+  shotsCard.hidden = shots.length === 0;
+  shotsGrid.innerHTML = "";
+  for (const s of shots) {
+    const a = document.createElement("a");
+    a.href = s.url; a.download = s.filename; a.title = s.filename; a.className = "shot-thumb";
+    const img = document.createElement("img");
+    img.src = s.url; img.alt = s.filename;
+    a.appendChild(img);
+    shotsGrid.appendChild(a);
+  }
+}
 
+function applyState(s) {
+  aiEnabled = s.ai_enabled;
   stateChip.textContent = s.state;
   stateChip.className = "state-chip " + s.state;
 
@@ -130,7 +222,6 @@ function applyState(s) {
   stopBtn.disabled = !active;
   toggleBtn.disabled = !active;
 
-  // Takeover toggle reflects current mode
   if (aiEnabled) {
     toggleBtn.textContent = "✋ Take Over (Manual)";
     toggleBtn.classList.remove("manual");
@@ -142,7 +233,7 @@ function applyState(s) {
   }
 
   stepCount.textContent = active || s.step ? `(${s.step}/${s.max_steps})` : "";
-  urlBar.textContent = s.url || "";
+  if (document.activeElement !== goUrl && !goUrl.value) goUrl.placeholder = s.url || "Go to URL…  (https://…)";
 
   if (s.state === "done" && s.result) {
     resultCard.hidden = false;
@@ -151,9 +242,6 @@ function applyState(s) {
     resultCard.hidden = true;
   }
 
-  // Data / export card: manual export buttons appear as soon as rows are
-  // collected (works even after stop/pause); a Download button appears once a
-  // file is written.
   const hasData = (s.data_rows || 0) > 0;
   if (hasData || s.export) {
     exportCard.hidden = false;
@@ -183,19 +271,6 @@ async function poll() {
   } catch (_) {}
 }
 
-// Live preview: swap the JPEG with a cache-busting query.
-function refreshShot() {
-  if (lastState === "idle") return;
-  const img = new Image();
-  img.onload = () => {
-    shot.src = img.src;
-    shot.style.display = "block";
-    shotEmpty.style.display = "none";
-  };
-  img.onerror = () => {};  // 204 / mid-navigation — let the Image be GC'd
-  img.src = "/api/screenshot?t=" + Date.now();
-}
-
 setInterval(poll, 1000);
-setInterval(refreshShot, 1500);
 poll();
+connectWS();

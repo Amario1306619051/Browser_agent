@@ -10,18 +10,20 @@ Serves the vanilla frontend and a tiny API:
 """
 from __future__ import annotations
 
+import asyncio
+import base64
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import config
 import exporter
 from agent import AgentSession
-from models import StartReq
+from models import GotoReq, StartReq
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -31,7 +33,9 @@ session = AgentSession()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # Close Chromium on server shutdown so we don't leak browser processes.
+    # Stop the frame producer and close Chromium on shutdown.
+    if _producer is not None:
+        _producer.cancel()
     await session.browser.close()
 
 
@@ -95,6 +99,87 @@ async def capture():
         return {"ok": True, "shot": ref}
     except Exception as e:  # noqa: BLE001 — no browser yet / mid-navigation
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.post("/api/goto")
+async def goto(req: GotoReq):
+    """Manual navigation from the dashboard address bar (only when AI isn't running)."""
+    try:
+        await session.manual_goto(req.url)
+        return {"ok": True}
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+def _input_allowed() -> bool:
+    # Manual interaction is allowed whenever the AI is NOT actively running a step.
+    return session.browser.started and session.state != "running"
+
+
+# One shared frame producer feeds ALL dashboard tabs: a single lock-free screenshot
+# loop, so N WebSocket clients don't each contend on the browser lock, and the
+# stream keeps flowing even while a long navigation holds the lock for the agent.
+_frame: dict = {"data": None}
+_producer: asyncio.Task | None = None
+
+
+async def _frame_producer():
+    while True:
+        try:
+            if session.browser.started:
+                _frame["data"] = await session.browser.frame_bytes(quality=45)
+        except Exception:  # noqa: BLE001 — mid-navigation / closing page
+            pass
+        await asyncio.sleep(0.1 if _input_allowed() else 0.25)
+
+
+def _ensure_producer() -> None:
+    global _producer
+    if _producer is None or _producer.done():
+        _producer = asyncio.create_task(_frame_producer())
+
+
+@app.websocket("/ws/screen")
+async def ws_screen(ws: WebSocket):
+    """Live browser stream into the dashboard + manual input forwarding.
+
+    The server pushes JPEG frames (from the shared producer); the client sends
+    click/scroll/key/text events, applied only when the AI isn't running (manual
+    takeover, re-checked under the lock in session.manual_input).
+    """
+    await ws.accept()
+    _ensure_producer()
+
+    async def pump():
+        while True:
+            data = _frame["data"]
+            if data is not None:
+                try:
+                    await ws.send_json({
+                        "t": "frame",
+                        "img": base64.b64encode(data).decode("ascii"),
+                        "w": config.VIEWPORT_W,
+                        "h": config.VIEWPORT_H,
+                        "interactive": _input_allowed(),
+                    })
+                except Exception:  # noqa: BLE001 — client gone
+                    return
+            await asyncio.sleep(0.1 if _input_allowed() else 0.25)
+
+    pump_task = asyncio.create_task(pump())
+    try:
+        while True:
+            await session.manual_input(await ws.receive_json())
+    except WebSocketDisconnect:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        pump_task.cancel()
+        try:
+            await pump_task
+        except asyncio.CancelledError:
+            pass
 
 
 @app.get("/output/{name}")

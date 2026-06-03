@@ -1,7 +1,9 @@
 """Playwright browser controller.
 
-Runs a HEADED, persistent Chromium so the human can watch the agent and take
-over directly in the window (e.g. to solve a Cloudflare / CAPTCHA challenge).
+Runs a headless, persistent Chromium streamed to the dashboard over a WebSocket.
+The frame is captured at a fixed viewport (config.VIEWPORT_W/H, device_scale_factor
+1) so a click in the preview maps 1:1 to page CSS pixels. Manual takeover (click /
+type / scroll) happens right in the dashboard preview.
 
 Two responsibilities:
   observe()  -> read the page into a numbered list of interactive elements
@@ -129,10 +131,10 @@ class Browser:
         self._ctx = await self._pw.chromium.launch_persistent_context(
             user_data_dir=config.USER_DATA_DIR,
             headless=config.HEADLESS,
-            no_viewport=True,
+            viewport={"width": config.VIEWPORT_W, "height": config.VIEWPORT_H},
+            device_scale_factor=1,  # frame px == CSS px → 1:1 click mapping
             args=[
                 "--disable-blink-features=AutomationControlled",
-                "--start-maximized",
                 "--no-sandbox",
             ],
             ignore_default_args=["--enable-automation"],
@@ -142,6 +144,18 @@ class Browser:
         self._started = True
         log.info("Browser started (headless=%s, profile=%s)", config.HEADLESS, config.USER_DATA_DIR)
 
+    @property
+    def started(self) -> bool:
+        return self._started
+
+    def current_url(self) -> str:
+        """Live URL of the active page (sync property — safe without the lock).
+        Reflects manual navigation immediately, unlike the loop's last_url."""
+        try:
+            return self.page.url if self.page else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
     def _sync_page(self) -> None:
         """Follow popups / new tabs: keep `self.page` pointing at the newest page."""
         if self._ctx and self._ctx.pages:
@@ -149,13 +163,61 @@ class Browser:
             if self.page is not newest:
                 self.page = newest
 
+    # ---- live-preview input forwarding (manual takeover in the dashboard) -----
+    @staticmethod
+    def _num(v, cap: float) -> float:
+        """Coerce a client-supplied number, dropping NaN/inf, clamped to ±cap."""
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return 0.0
+        if v != v or v in (float("inf"), float("-inf")):
+            return 0.0
+        return max(-cap, min(v, cap))
+
+    def _xy(self, x, y) -> tuple[float, float]:
+        return (max(0.0, self._num(x, config.VIEWPORT_W)),
+                max(0.0, self._num(y, config.VIEWPORT_H)))
+
+    async def apply_input(self, msg: dict) -> None:
+        """Apply ONE manual input event. Caller MUST already hold self._lock and
+        have verified the AI isn't running. All client-supplied values are clamped."""
+        self._sync_page()
+        t = msg.get("t")
+        if t == "click":
+            x, y = self._xy(msg.get("x"), msg.get("y"))
+            btn = msg.get("button", "left")
+            await self.page.mouse.click(
+                x, y, button=btn if btn in ("left", "right", "middle") else "left",
+                click_count=max(1, min(int(msg.get("clicks", 1) or 1), 3)))
+        elif t == "move":
+            x, y = self._xy(msg.get("x"), msg.get("y"))
+            await self.page.mouse.move(x, y)
+        elif t == "scroll":
+            await self.page.mouse.wheel(self._num(msg.get("dx", 0), 5000),
+                                        self._num(msg.get("dy", 0), 5000))
+        elif t == "key":
+            await self.page.keyboard.press(str(msg.get("key", ""))[:32])
+        elif t == "text":
+            await self.page.keyboard.type(str(msg.get("text", ""))[:2000])
+
+    async def frame_bytes(self, quality: int = 45) -> bytes:
+        """Screenshot for the live stream WITHOUT the lock. It's read-only and
+        Playwright serializes protocol calls, so it's safe to run concurrently with
+        agent ops — which keeps the stream alive even while a long navigation (goto)
+        holds the lock. Bounded by a short timeout so it can't pile up."""
+        self._sync_page()
+        return await self.page.screenshot(type="jpeg", quality=quality,
+                                          full_page=False, timeout=5000)
+
     async def observe(self) -> dict:
+        # Wait for load OUTSIDE the lock so a slow page can't hold it for 8s.
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+        except Exception:
+            pass
         async with self._lock:
             self._sync_page()
-            try:
-                await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
-            except Exception:
-                pass
             try:
                 return await self.page.evaluate(_OBSERVE_JS)
             except Exception as e:  # noqa: BLE001
@@ -172,14 +234,17 @@ class Browser:
             except Exception:
                 pass
 
+    async def _goto(self, url: str) -> None:
+        await self.page.goto(_normalize(url), wait_until="domcontentloaded", timeout=30000)
+
     async def goto(self, url: str) -> None:
         async with self._lock:
-            await self.page.goto(_normalize(url), wait_until="domcontentloaded", timeout=30000)
+            await self._goto(url)
 
-    async def screenshot(self) -> bytes:
+    async def screenshot(self, quality: int = 55) -> bytes:
         async with self._lock:
             self._sync_page()
-            return await self.page.screenshot(type="jpeg", quality=55, full_page=False)
+            return await self.page.screenshot(type="jpeg", quality=quality, full_page=False)
 
     async def capture(self, index=None, region=None, full=False) -> bytes:
         """PNG screenshot of a specific element (by data-ai-index), a region clip

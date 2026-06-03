@@ -32,7 +32,7 @@
           <span class="mode-dot" id="modeDot"></span>
         </div>
         <p class="hint">If you hit a Cloudflare / CAPTCHA / login wall, click this button to
-          take over. Do it yourself directly in the <b>Chromium window</b>, then click again
+          take over — then <b>click, type and scroll right here in the preview</b>. Click again
           to hand control back to the AI.</p>
         <button id="toggleBtn" class="toggle" disabled>✋ Take Over (Manual)</button>
       </div>
@@ -63,16 +63,18 @@
       </div>
     </section>
 
-    <!-- Right: live preview -->
+    <!-- Right: live interactive browser -->
     <section class="preview">
       <div class="preview-bar">
-        <span class="muted">Preview (read-only)</span>
-        <span id="urlBar" class="urlbar"></span>
-        <button id="captureBtn" class="mini-btn" title="Save a screenshot of the current view">📸 Capture</button>
+        <input id="goUrl" class="go-url" type="text" placeholder="Go to URL…  (https://…)" />
+        <button id="goBtn" class="mini-btn">Go</button>
+        <span id="modeBadge" class="mode-badge view">view-only</span>
+        <button id="captureBtn" class="mini-btn" title="Save a screenshot of the current view">📸</button>
       </div>
-      <div class="shot-wrap">
-        <img id="shot" alt="preview" />
-        <div id="shotEmpty" class="shot-empty">Browser not running yet.<br>Start a task first.</div>
+      <div class="shot-wrap" id="screenWrap" tabindex="0">
+        <img id="screen" alt="browser" draggable="false" />
+        <div id="screenEmpty" class="shot-empty">Browser not running yet.<br>Start a task (or type a URL above) to open it here.</div>
+        <div id="viewOnly" class="view-only-overlay" hidden aria-hidden="true">AI is driving — click <b>Take Over</b> to interact</div>
       </div>
     </section>
   </main>

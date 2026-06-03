@@ -37,8 +37,13 @@ VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
 # ===== Agent / browser tuning =====
 # Hard cap on autonomous steps so a confused model can't loop forever.
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "30"))
-# Headed by default — the human needs to SEE the browser to take over (Cloudflare etc.).
-HEADLESS = os.getenv("AGENT_HEADLESS", "false").strip().lower() in ("1", "true", "yes")
+# Headless by default — the browser is streamed into the dashboard (no separate
+# window), and you take over right there in the live preview.
+HEADLESS = os.getenv("AGENT_HEADLESS", "true").strip().lower() in ("1", "true", "yes")
+# Fixed viewport so the streamed frame size is predictable (needed to map a click
+# in the dashboard preview back to page coordinates).
+VIEWPORT_W = int(os.getenv("AGENT_VIEWPORT_W", "1280"))
+VIEWPORT_H = int(os.getenv("AGENT_VIEWPORT_H", "800"))
 # Persistent Chrome profile so logins / Cloudflare clearance survive restarts.
 USER_DATA_DIR = os.getenv("AGENT_USER_DATA_DIR", str(BASE_DIR / ".profile"))
 # Optional custom UA (left blank = Playwright default Chromium UA).

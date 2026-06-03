@@ -5,9 +5,11 @@ the cheapest iPhone 15 on Amazon"), and the AI opens pages, types, clicks, and
 scrolls until it's done. It uses any OpenAI-compatible LLM endpoint (vLLM,
 Ollama, llama.cpp, …) as its brain.
 
-Key feature: a **Take Over (Manual)** button. When you hit a Cloudflare / CAPTCHA
-/ login wall, click it — the AI pauses, you solve it yourself in the real Chromium
-window, then click **Resume AI** to continue the task from where it left off.
+The browser runs headless and is **streamed live into the dashboard** — no separate
+window. Key feature: a **Take Over (Manual)** button. When you hit a Cloudflare /
+CAPTCHA / login wall, click it and then **click, type and scroll right inside the
+preview** (there's also an address bar to navigate manually). Click again to hand
+control back to the AI and it continues from where it left off.
 
 ![AI Browser Agent control panel](assets/preview.png)
 
@@ -86,9 +88,10 @@ window opens — that's where you can take over manually when needed.
 
 ## Notes & limitations
 
-- **Headed is required** for manual takeover, so this needs a display (run it on a
-  desktop, not a headless server). The Chrome profile is stored in `.profile/` so
-  logins and Cloudflare clearance persist across runs.
+- Runs **headless** — the page is streamed into the dashboard over a WebSocket and
+  you interact right there, so it works on a headless server too (no display needed).
+  Set `AGENT_HEADLESS=false` if you also want a real window. The Chrome profile is
+  stored in `.profile/` so logins and Cloudflare clearance persist across runs.
 - The agent reads the page through the DOM (text-based), so content inside
   cross-origin iframes, shadow DOM, or pure-canvas apps may be invisible to it.
 - Page content is fed to the LLM, so a malicious page could attempt prompt

@@ -332,6 +332,29 @@ class AgentSession:
             self.ai_enabled.set()  # unblock a paused loop so it can see _stop
         self._log("info", "Stop requested…")
 
+    # ---- manual takeover in the dashboard preview ----------------------------
+    async def manual_input(self, msg: dict) -> None:
+        """Forward one dashboard input event to the page — only when the AI isn't
+        running. The state is re-checked INSIDE the lock to close the TOCTOU with
+        the agent loop (which acquires the same lock to act)."""
+        if not self.browser.started or self.state == "running":
+            return
+        async with self.browser._lock:
+            if self.state == "running":
+                return
+            try:
+                await self.browser.apply_input(msg)
+            except Exception:  # noqa: BLE001 — detached page / bad event; drop it
+                pass
+
+    async def manual_goto(self, url: str) -> None:
+        if not self.browser.started:
+            raise RuntimeError("no browser — start a task first")
+        async with self.browser._lock:
+            if self.state == "running":
+                raise RuntimeError("AI is running — take over first")
+            await self.browser._goto(url)
+
     def status(self) -> dict:
         return {
             "state": self.state,
@@ -339,7 +362,8 @@ class AgentSession:
             "step": self.step,
             "max_steps": config.MAX_STEPS,
             "ai_enabled": bool(self.ai_enabled and self.ai_enabled.is_set()),
-            "url": self.last_url,
+            # Live page URL (reflects manual navigation); falls back to the loop's last.
+            "url": self.browser.current_url() or self.last_url,
             "title": self.last_title,
             "result": self.result,
             "data_rows": len(self.data_rows),

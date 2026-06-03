@@ -7,3 +7,7 @@ from pydantic import BaseModel
 class StartReq(BaseModel):
     task: str
     start_url: str | None = None
+
+
+class GotoReq(BaseModel):
+    url: str
