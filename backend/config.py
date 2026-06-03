@@ -48,6 +48,14 @@ VIEWPORT_H = int(os.getenv("AGENT_VIEWPORT_H", "800"))
 USER_DATA_DIR = os.getenv("AGENT_USER_DATA_DIR", str(BASE_DIR / ".profile"))
 # Optional custom UA (left blank = Playwright default Chromium UA).
 USER_AGENT = os.getenv("AGENT_USER_AGENT", "").strip()
+# ===== Short-term memory (per thread_id) =====
+# Empty = SQLite (zero-setup, file below). Set to postgresql://user:pass@host/db
+# to use Postgres instead (needs the 'psycopg' package).
+DATABASE_URL = os.getenv("AGENT_DATABASE_URL", "").strip()
+MEMORY_DB_PATH = BASE_DIR / "memory.db"
+# How many recent tasks-in-a-thread to feed back to the model as context.
+MEMORY_TURNS = int(os.getenv("AGENT_MEMORY_TURNS", "10"))
+
 # Where the control panel listens.
 def _port() -> int:
     try:

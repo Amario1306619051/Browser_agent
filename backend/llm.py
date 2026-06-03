@@ -172,11 +172,27 @@ def _validate(decision: dict, obs: dict) -> None:
         raise ValueError("action 'record_rows' requires a 'rows' array")
 
 
-def decide(task: str, obs: dict, logs: list[dict]) -> dict:
+def _memory_block(memory: list[dict] | None) -> str:
+    if not memory:
+        return ""
+    lines = []
+    for i, t in enumerate(memory, 1):
+        result = (t.get("result") or "").strip().replace("\n", " ")[:600]
+        lines.append(f"{i}. Task: {(t.get('task') or '').strip()[:300]}\n   Result: {result}")
+    return (
+        "CONVERSATION MEMORY — earlier tasks you completed in this thread (oldest first). "
+        "Use it for context and to resolve references like 'it' / 'that one':\n"
+        + "\n".join(lines)
+        + "\n\n"
+    )
+
+
+def decide(task: str, obs: dict, logs: list[dict], memory: list[dict] | None = None) -> dict:
     """Ask the model for the next action. Returns the parsed JSON dict.
     Raises on repeated failure so the agent loop can log + skip the step."""
     user = (
-        f"TASK: {task}\n\n"
+        _memory_block(memory)
+        + f"TASK: {task}\n\n"
         f"CURRENT PAGE\nURL: {obs.get('url','')}\nTitle: {obs.get('title','')}\n"
         f"scroll {obs.get('scrollY',0)} / {obs.get('scrollH',0)} px\n\n"
         f"VISIBLE PAGE TEXT (truncated):\n{(obs.get('text') or '')[:2500]}\n\n"

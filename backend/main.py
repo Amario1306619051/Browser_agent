@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 import config
 import exporter
 from agent import AgentSession
+from memory import store
 from models import GotoReq, StartReq
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -52,10 +53,17 @@ async def index():
 @app.post("/api/start")
 async def start(req: StartReq):
     try:
-        await session.start(req.task, req.start_url)
+        await session.start(req.task, req.start_url, req.thread_id)
         return {"ok": True}
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+
+
+@app.get("/api/thread")
+async def thread(id: str = ""):
+    """Indicator for the UI: does this thread_id already have memory?"""
+    c = store.count(id)
+    return {"id": store.norm(id), "exists": c > 0, "count": c}
 
 
 @app.post("/api/pause")

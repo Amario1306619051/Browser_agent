@@ -4,4 +4,6 @@ pydantic>=2.6
 openai>=1.0          # LLM client (OpenAI-compatible endpoint) — the agent brain
 playwright>=1.44     # headed Chromium automation
 openpyxl>=3.1        # XLSX export (CSV uses the stdlib)
+# Short-term memory uses SQLite (stdlib) by default. For Postgres, set
+# AGENT_DATABASE_URL=postgresql://... and install: pip install "psycopg[binary]"
 # After install:  python -m playwright install chromium

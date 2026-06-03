@@ -83,6 +83,17 @@ textarea, input[type=text] {
 }
 textarea:focus, input:focus { outline: none; border-color: var(--accent-dim); }
 
+.thread-badge {
+  float: right;
+  font: 600 10px/1.4 ui-monospace, monospace;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-transform: none;
+}
+.thread-badge.none { background: #23262e; color: var(--muted); border: 1px solid var(--line); }
+.thread-badge.new  { background: #2a2e38; color: var(--accent); border: 1px solid var(--accent-dim); }
+.thread-badge.has  { background: var(--green); color: #0e0f12; }
+
 .row { display: flex; gap: 8px; }
 button {
   cursor: pointer;

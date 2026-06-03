@@ -21,6 +21,7 @@ import config
 import exporter
 import llm
 from browser import Browser
+from memory import store
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +75,10 @@ class AgentSession:
         self._row_seen: set = set()  # row signatures, for dedupe across scrolls
         self.last_export: dict | None = None
         self.shots: list[dict] = []  # saved screenshots ({filename, url})
+        # Short-term memory: tasks done earlier in this thread_id (cross-task context).
+        self.thread_id = ""
+        self.thread_memory: list[dict] = []
+        self.thread_count = 0
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
     # phrase list covers English and Indonesian site labels to keep it useful on
@@ -115,6 +120,13 @@ class AgentSession:
         self.last_export = ref
         return ref
 
+    def _remember(self) -> None:
+        """Persist this finished task + its result into the thread's memory."""
+        if self.thread_id and self.result:
+            store.append(self.thread_id, self.task, self.result)
+            self.thread_memory.append({"task": self.task, "result": self.result, "ts": time.time()})
+            self.thread_count = len(self.thread_memory)
+
     def _save_pending(self, fmt: str = "csv") -> None:
         """Write collected rows on any terminal path (done / stop / step-limit) so
         a run never loses data it already gathered."""
@@ -143,7 +155,7 @@ class AgentSession:
         log.info("[%s] %s", kind, text)
 
     # ---- lifecycle -----------------------------------------------------------
-    async def start(self, task: str, start_url: str | None = None) -> None:
+    async def start(self, task: str, start_url: str | None = None, thread_id: str | None = None) -> None:
         if self.state in ("running", "paused"):
             raise RuntimeError("A task is already running. Stop it before starting a new one.")
         # A previous run may still be finishing its terminal step (state already
@@ -170,11 +182,17 @@ class AgentSession:
         self._row_seen = set()
         self.last_export = None
         self.shots = []
+        # Load short-term memory for this thread (earlier tasks → context).
+        self.thread_id = store.norm(thread_id)
+        self.thread_memory = store.load(self.thread_id) if self.thread_id else []
+        self.thread_count = len(self.thread_memory)
         if self.ai_enabled is None:
             self.ai_enabled = asyncio.Event()
         self.ai_enabled.set()
         self.state = "running"
         self._log("info", f"Task started: {self.task}")
+        if self.thread_id:
+            self._log("info", f"🧠 Thread '{self.thread_id}': recalling {self.thread_count} earlier task(s).")
 
         await self.browser.start()
         if start_url:
@@ -207,7 +225,7 @@ class AgentSession:
                 self.last_url, self.last_title = obs.get("url", ""), obs.get("title", "")
 
                 try:
-                    decision = llm.decide(self.task, obs, self.logs)
+                    decision = llm.decide(self.task, obs, self.logs, self.thread_memory)
                 except Exception as e:  # noqa: BLE001
                     self._log("error", f"LLM failed to decide an action: {e}")
                     await asyncio.sleep(1.0)
@@ -222,6 +240,7 @@ class AgentSession:
                 if action == "done":
                     self._save_pending()  # don't lose data if the model forgot to export
                     self.result = str(decision.get("answer", "(done)"))
+                    self._remember()
                     self.state = "done"
                     self._log("done", self.result)
                     return
@@ -302,6 +321,7 @@ class AgentSession:
             else:
                 self._save_pending()
                 self.result = self.result or f"Auto-stopped: reached the {config.MAX_STEPS}-step limit before the task finished."
+                self._remember()
                 self._log("info", self.result)
 
             if self._stop:
@@ -369,5 +389,7 @@ class AgentSession:
             "data_rows": len(self.data_rows),
             "export": self.last_export,
             "shots": self.shots,
+            "thread_id": self.thread_id,
+            "thread_count": self.thread_count,
             "logs": self.logs[-100:],
         }

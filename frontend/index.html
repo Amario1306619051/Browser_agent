@@ -20,6 +20,10 @@
         <textarea id="task" rows="3" placeholder="e.g. Open Wikipedia, find the article about Borobudur, and tell me the year it was built"></textarea>
         <label class="lbl">Start URL (optional)</label>
         <input id="startUrl" type="text" placeholder="leave empty to let the AI decide — e.g. https://google.com" />
+        <label class="lbl">Thread ID — short-term memory
+          <span id="threadBadge" class="thread-badge none">no memory</span>
+        </label>
+        <input id="threadId" type="text" placeholder="e.g. shopping-1 — reuse the same ID so the AI remembers context (optional)" />
         <div class="row">
           <button id="startBtn" class="primary">▶ Start</button>
           <button id="stopBtn" class="ghost" disabled>■ Stop</button>

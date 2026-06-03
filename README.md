@@ -47,6 +47,18 @@ You don't have to wait for the agent to finish: once any rows are collected,
 at any time — even after you pause or stop the run. Stopping a run also
 auto-saves whatever was gathered, so data is never lost.
 
+### Short-term memory (threads)
+
+Give a task a **Thread ID** in the dashboard and the agent remembers what it did
+earlier in that thread, so follow-ups keep context ("now add *it* to the cart"
+resolves to what the previous task found). Reuse the same Thread ID to continue a
+conversation; a badge shows whether that ID is **new** or already has **N
+remembered** tasks. Memory is stored in SQLite by default (`memory.db`, zero
+setup); set `AGENT_DATABASE_URL=postgresql://…` (and `pip install "psycopg[binary]"`)
+to use Postgres instead. `AGENT_MEMORY_TURNS` (default 10) caps how many recent
+turns are fed back to the model. It's the same idea as LangGraph's `thread_id`
+checkpointer, kept native to avoid pulling a framework into the codebase.
+
 ### Screenshots
 
 Ask the agent to capture something and it uses the `screenshot` action to save a

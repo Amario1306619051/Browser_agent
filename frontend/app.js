@@ -3,6 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const taskEl = $("task");
 const startUrlEl = $("startUrl");
+const threadId = $("threadId");
+const threadBadge = $("threadBadge");
 const startBtn = $("startBtn");
 const stopBtn = $("stopBtn");
 const toggleBtn = $("toggleBtn");
@@ -44,12 +46,38 @@ startBtn.onclick = async () => {
   const task = taskEl.value.trim();
   if (!task) { taskEl.focus(); return; }
   startBtn.disabled = true;
-  const res = await api("/api/start", { task, start_url: startUrlEl.value.trim() || null });
+  const res = await api("/api/start", {
+    task,
+    start_url: startUrlEl.value.trim() || null,
+    thread_id: threadId.value.trim() || null,
+  });
   if (!res.ok) {
     alert("Failed to start: " + (res.error || "unknown"));
     startBtn.disabled = false;
   }
 };
+
+// ---- thread memory indicator -------------------------------------------------
+function setThreadBadge(count) {
+  if (count === null) { threadBadge.textContent = "no memory"; threadBadge.className = "thread-badge none"; }
+  else if (count === 0) { threadBadge.textContent = "new thread"; threadBadge.className = "thread-badge new"; }
+  else { threadBadge.textContent = "🧠 " + count + " remembered"; threadBadge.className = "thread-badge has"; }
+}
+async function checkThread() {
+  const id = threadId.value.trim();
+  if (!id) { setThreadBadge(null); return; }
+  try {
+    const r = await (await fetch("/api/thread?id=" + encodeURIComponent(id))).json();
+    setThreadBadge(r.count);
+  } catch (_) {}
+}
+let threadTimer = null;
+threadId.addEventListener("input", () => {
+  localStorage.setItem("ba_threadId", threadId.value);
+  clearTimeout(threadTimer);
+  threadTimer = setTimeout(checkThread, 400);
+});
+threadId.value = localStorage.getItem("ba_threadId") || "";
 
 stopBtn.onclick = () => api("/api/stop");
 
@@ -235,6 +263,9 @@ function applyState(s) {
   stepCount.textContent = active || s.step ? `(${s.step}/${s.max_steps})` : "";
   if (document.activeElement !== goUrl && !goUrl.value) goUrl.placeholder = s.url || "Go to URL…  (https://…)";
 
+  // Keep the memory badge live for the active thread (it grows as tasks finish).
+  if (s.thread_id && s.thread_id === threadId.value.trim()) setThreadBadge(s.thread_count);
+
   if (s.state === "done" && s.result) {
     resultCard.hidden = false;
     resultText.textContent = s.result;
@@ -273,4 +304,5 @@ async function poll() {
 
 setInterval(poll, 1000);
 poll();
+checkThread();
 connectWS();
