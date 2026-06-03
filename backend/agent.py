@@ -98,6 +98,25 @@ class AgentSession:
         self.last_export = ref
         return ref
 
+    def _save_pending(self, fmt: str = "csv") -> None:
+        """Write collected rows on any terminal path (done / stop / step-limit) so
+        a run never loses data it already gathered."""
+        if self.data_rows and not self.last_export:
+            try:
+                ref = self._export("export", fmt)
+                self._log("file", f"auto-exported {ref['rows']} row(s) → {ref['filename']}")
+            except Exception as e:  # noqa: BLE001
+                self._log("error", f"auto-export failed: {e}")
+
+    def export_now(self, fmt: str = "csv") -> dict | None:
+        """Manual export, triggered from the panel. Works regardless of run state
+        (idle / paused / stopped) as long as rows were collected."""
+        if not self.data_rows:
+            return None
+        ref = self._export("export", fmt)
+        self._log("file", f"exported {ref['rows']} row(s) → {ref['filename']}")
+        return ref
+
     # ---- logging -------------------------------------------------------------
     def _log(self, kind: str, text: str, **extra) -> None:
         entry = {"ts": time.time(), "step": self.step, "kind": kind, "text": text}
@@ -182,13 +201,7 @@ class AgentSession:
                 action = decision.get("action")
 
                 if action == "done":
-                    # Don't lose collected data if the model forgot to export.
-                    if self.data_rows and not self.last_export:
-                        try:
-                            ref = self._export("export", "xlsx")
-                            self._log("file", f"auto-exported {ref['rows']} row(s) → {ref['filename']}")
-                        except Exception as e:  # noqa: BLE001
-                            self._log("error", f"auto-export failed: {e}")
+                    self._save_pending()  # don't lose data if the model forgot to export
                     self.result = str(decision.get("answer", "(done)"))
                     self.state = "done"
                     self._log("done", self.result)
@@ -241,10 +254,12 @@ class AgentSession:
                 except Exception as e:  # noqa: BLE001
                     self._log("error", f"Action failed: {e}")
             else:
+                self._save_pending()
                 self.result = self.result or f"Auto-stopped: reached the {config.MAX_STEPS}-step limit before the task finished."
                 self._log("info", self.result)
 
             if self._stop:
+                self._save_pending()  # stopping mid-run still saves what was gathered
                 self.state = "idle"
                 self._log("info", "Stopped by user.")
             elif self.state not in ("done", "error"):

@@ -76,6 +76,14 @@ async def status():
     return session.status()
 
 
+@app.post("/api/export")
+async def export(fmt: str = "csv"):
+    ref = session.export_now("xlsx" if fmt.lower() == "xlsx" else "csv")
+    if ref is None:
+        return JSONResponse({"ok": False, "error": "no data collected yet"}, status_code=400)
+    return {"ok": True, "export": ref}
+
+
 @app.get("/output/{name}")
 async def download(name: str):
     # Path(name).name strips any path components — only serve flat files in OUTPUT_DIR.

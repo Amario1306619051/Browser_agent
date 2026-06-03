@@ -45,7 +45,11 @@
       <div class="card export-card" id="exportCard" hidden>
         <div class="lbl">Data / Export</div>
         <div id="exportInfo" class="export-info"></div>
-        <a id="downloadLink" class="dl-btn" href="#" download>⬇ Download</a>
+        <div class="row" id="exportBtns">
+          <button id="exportCsvBtn" class="ghost">⬇ Export CSV</button>
+          <button id="exportXlsxBtn" class="ghost">⬇ Export Excel</button>
+        </div>
+        <a id="downloadLink" class="dl-btn" href="#" download hidden>⬇ Download</a>
       </div>
 
       <div class="card log-card">

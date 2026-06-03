@@ -14,6 +14,9 @@ const resultCard = $("resultCard");
 const resultText = $("resultText");
 const exportCard = $("exportCard");
 const exportInfo = $("exportInfo");
+const exportBtns = $("exportBtns");
+const exportCsvBtn = $("exportCsvBtn");
+const exportXlsxBtn = $("exportXlsxBtn");
 const downloadLink = $("downloadLink");
 const urlBar = $("urlBar");
 const shot = $("shot");
@@ -45,6 +48,14 @@ startBtn.onclick = async () => {
 };
 
 stopBtn.onclick = () => api("/api/stop");
+
+async function doExport(fmt) {
+  const res = await api("/api/export?fmt=" + fmt);
+  if (!res.ok) alert("Export failed: " + (res.error || "no data"));
+  else poll();
+}
+exportCsvBtn.onclick = () => doExport("csv");
+exportXlsxBtn.onclick = () => doExport("xlsx");
 
 toggleBtn.onclick = async () => {
   // aiEnabled true  -> we want to PAUSE (take over)
@@ -110,19 +121,23 @@ function applyState(s) {
     resultCard.hidden = true;
   }
 
-  // Data / export card: show a download button once a file is written, or a live
-  // "collected N rows" count while the agent is still gathering.
-  if (s.export) {
+  // Data / export card: manual export buttons appear as soon as rows are
+  // collected (works even after stop/pause); a Download button appears once a
+  // file is written.
+  const hasData = (s.data_rows || 0) > 0;
+  if (hasData || s.export) {
     exportCard.hidden = false;
-    exportInfo.textContent = `${s.export.rows} rows · ${s.export.columns.join(", ")}`;
-    downloadLink.style.display = "inline-block";
-    downloadLink.href = s.export.url;
-    downloadLink.textContent = "⬇ Download " + s.export.filename;
-    downloadLink.setAttribute("download", s.export.filename);
-  } else if (s.data_rows) {
-    exportCard.hidden = false;
-    exportInfo.textContent = `${s.data_rows} rows collected (not exported yet)`;
-    downloadLink.style.display = "none";
+    exportBtns.style.display = hasData ? "flex" : "none";
+    if (s.export) {
+      downloadLink.hidden = false;
+      downloadLink.href = s.export.url;
+      downloadLink.textContent = "⬇ Download " + s.export.filename;
+      downloadLink.setAttribute("download", s.export.filename);
+      exportInfo.textContent = `${s.data_rows || s.export.rows} rows collected · ${s.export.columns.join(", ")}`;
+    } else {
+      downloadLink.hidden = true;
+      exportInfo.textContent = `${s.data_rows} rows collected — export to download`;
+    }
   } else {
     exportCard.hidden = true;
   }

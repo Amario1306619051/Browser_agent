@@ -33,8 +33,12 @@ Ask it to compile data and it will (e.g. *"go through this product list and make
 an Excel with columns name, price, link"*). As the agent reads each item it
 collects rows (`record_rows`), then writes a `.xlsx` or `.csv` file (`export`) to
 `output/`. A **Download** button appears in the panel; files are also served at
-`/output/<filename>`. If the run ends with uncollected rows still pending, they're
-auto-exported so nothing is lost.
+`/output/<filename>`.
+
+You don't have to wait for the agent to finish: once any rows are collected,
+**Export CSV / Export Excel** buttons appear in the panel so you can dump the data
+at any time — even after you pause or stop the run. Stopping a run also
+auto-saves whatever was gathered, so data is never lost.
 
 ## Setup
 
