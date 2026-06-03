@@ -76,6 +76,8 @@ _SYSTEM = (
     "a short reason. A human will solve it and resume you.\n"
     "- NEVER perform payments, purchases, deletions, or other irreversible / sensitive "
     "submits on your own — return request_manual so the human can confirm.\n"
+    "- ONLY use the screenshot action when the task EXPLICITLY asks to screenshot / "
+    "capture / 'tangkap layar' something. For any other task, never take a screenshot.\n"
     "- Before acting, check RECENT ACTIONS: if the task is already accomplished "
     "(e.g. the screenshot was saved, the file was exported, the answer was found), "
     "call done immediately — NEVER repeat an action that already succeeded.\n"

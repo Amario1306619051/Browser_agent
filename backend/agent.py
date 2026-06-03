@@ -86,6 +86,17 @@ class AgentSession:
         re.IGNORECASE,
     )
 
+    # The AI may only screenshot when the task explicitly asks for it — otherwise
+    # the screenshot action is rejected (see _loop). EN + ID terms.
+    _SCREENSHOT_RE = re.compile(
+        r"screenshot|screen ?shot|screen ?capture|screen ?grab|snapshot|capture|"
+        r"tangkap(?:an)? layar|potret layar|cuplikan layar|ss layar",
+        re.IGNORECASE,
+    )
+
+    def _wants_screenshot(self) -> bool:
+        return bool(self._SCREENSHOT_RE.search(self.task or ""))
+
     def _is_dangerous(self, decision: dict, obs: dict) -> bool:
         """True if a click/type targets an element whose label looks like a
         payment / purchase / account-deletion control."""
@@ -257,6 +268,11 @@ class AgentSession:
                     continue
 
                 if action == "screenshot":
+                    if not self._wants_screenshot():
+                        # Hard guard: never screenshot unless the task asked for it.
+                        # Logged as an error so the model sees it and stops trying.
+                        self._log("error", "screenshot rejected: the task did not ask for a screenshot — do not use the screenshot action")
+                        continue
                     try:
                         png = await self.browser.capture(
                             decision.get("index"), decision.get("region"), decision.get("full")
