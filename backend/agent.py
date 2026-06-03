@@ -45,6 +45,10 @@ def _fmt_action(d: dict) -> str:
         return f"record {len(d.get('rows') or [])} row(s)"
     if a == "export":
         return f"export {d.get('format', 'xlsx')}: {d.get('filename', 'export')}"
+    if a == "screenshot":
+        if d.get("index") is not None:
+            return f"screenshot element [{d.get('index')}]"
+        return "screenshot (full page)" if d.get("full") else "screenshot (view)"
     if a == "done":
         return f"done: {d.get('answer', '')}"
     return str(a)
@@ -69,6 +73,7 @@ class AgentSession:
         self.data_columns: list[str] = []
         self._row_seen: set = set()  # row signatures, for dedupe across scrolls
         self.last_export: dict | None = None
+        self.shots: list[dict] = []  # saved screenshots ({filename, url})
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
     # phrase list covers English and Indonesian site labels to keep it useful on
@@ -153,6 +158,7 @@ class AgentSession:
         self.data_columns = []
         self._row_seen = set()
         self.last_export = None
+        self.shots = []
         if self.ai_enabled is None:
             self.ai_enabled = asyncio.Event()
         self.ai_enabled.set()
@@ -250,6 +256,18 @@ class AgentSession:
                         self._log("error", f"export failed: {e}")
                     continue
 
+                if action == "screenshot":
+                    try:
+                        png = await self.browser.capture(
+                            decision.get("index"), decision.get("region"), decision.get("full")
+                        )
+                        ref = exporter.save_image(png, decision.get("filename") or "shot")
+                        self.shots.append(ref)
+                        self._log("file", f"screenshot saved → {ref['filename']}")
+                    except Exception as e:  # noqa: BLE001
+                        self._log("error", f"screenshot failed: {e}")
+                    continue
+
                 # Sensitive-action guard: pause once for the human. On resume the
                 # loop re-decides; if it picks the same flagged action again the ack
                 # lets it through (reset below), so we never loop forever on it.
@@ -310,5 +328,6 @@ class AgentSession:
             "result": self.result,
             "data_rows": len(self.data_rows),
             "export": self.last_export,
+            "shots": self.shots,
             "logs": self.logs[-100:],
         }

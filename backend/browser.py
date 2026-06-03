@@ -181,6 +181,28 @@ class Browser:
             self._sync_page()
             return await self.page.screenshot(type="jpeg", quality=55, full_page=False)
 
+    async def capture(self, index=None, region=None, full=False) -> bytes:
+        """PNG screenshot of a specific element (by data-ai-index), a region clip
+        {x,y,width,height}, the full page, or (default) the current viewport. The
+        AI overlay boxes are hidden during the shot so they don't pollute it."""
+        async with self._lock:
+            self._sync_page()
+            await self.page.evaluate(
+                "() => { const o = document.getElementById('__ai_overlay__'); if (o) o.style.display = 'none'; }"
+            )
+            try:
+                if index is not None:
+                    loc = self.page.locator(f'[data-ai-index="{int(index)}"]').first
+                    return await loc.screenshot(type="png", timeout=8000)
+                if region and all(k in region for k in ("x", "y", "width", "height")):
+                    clip = {k: float(region[k]) for k in ("x", "y", "width", "height")}
+                    return await self.page.screenshot(type="png", clip=clip)
+                return await self.page.screenshot(type="png", full_page=bool(full))
+            finally:
+                await self.page.evaluate(
+                    "() => { const o = document.getElementById('__ai_overlay__'); if (o) o.style.display = ''; }"
+                )
+
     async def act(self, d: dict) -> str:
         async with self._lock:
             self._sync_page()

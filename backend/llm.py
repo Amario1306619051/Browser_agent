@@ -53,6 +53,7 @@ _SYSTEM = (
     "- {\"action\":\"request_manual\",\"reason\":\"...\"}             hand control to the human\n"
     "- {\"action\":\"record_rows\",\"rows\":[{\"col\":\"val\",...}]}    collect data rows for a table/CSV/Excel\n"
     "- {\"action\":\"export\",\"format\":\"xlsx|csv\",\"filename\":\"...\",\"columns\":[...]}  write the collected rows to a file\n"
+    "- {\"action\":\"screenshot\",\"index\":N,\"filename\":\"...\"}    save a PNG of element N (omit index = current view; add \"full\":true for the whole page)\n"
     "- {\"action\":\"done\",\"success\":true,\"answer\":\"<result for the user>\"}  task finished\n\n"
     "Rules:\n"
     "- If the task asks to compile/collect data into a table, list, CSV, or Excel: as you "

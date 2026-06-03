@@ -151,6 +151,23 @@ button:not(:disabled):hover { filter: brightness(1.12); }
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; border-bottom: 1px solid var(--line);
 }
+.mini-btn {
+  margin-left: auto;
+  background: #23262e;
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.urlbar { flex: 1; }
+
+.shots-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.shot-thumb {
+  display: block; width: 84px; height: 84px;
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+}
+.shot-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shot-thumb:hover { border-color: var(--accent); }
 .urlbar {
   font: 12px ui-monospace, monospace; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

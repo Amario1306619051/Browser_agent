@@ -40,6 +40,13 @@ You don't have to wait for the agent to finish: once any rows are collected,
 at any time — even after you pause or stop the run. Stopping a run also
 auto-saves whatever was gathered, so data is never lost.
 
+### Screenshots
+
+Ask the agent to capture something and it uses the `screenshot` action to save a
+PNG of a specific element, a region, or the whole page to `output/`. You can also
+hit the **📸 Capture** button in the preview bar to grab the current view yourself.
+Captures show up as thumbnails in the panel (click to download).
+
 ## Setup
 
 ```bash

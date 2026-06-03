@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import config
+import exporter
 from agent import AgentSession
 from models import StartReq
 
@@ -82,6 +83,18 @@ async def export(fmt: str = "csv"):
     if ref is None:
         return JSONResponse({"ok": False, "error": "no data collected yet"}, status_code=400)
     return {"ok": True, "export": ref}
+
+
+@app.post("/api/capture")
+async def capture():
+    """Manual screenshot of the current view, saved to output/."""
+    try:
+        png = await session.browser.capture()
+        ref = exporter.save_image(png, "manual")
+        session.shots.append(ref)
+        return {"ok": True, "shot": ref}
+    except Exception as e:  # noqa: BLE001 — no browser yet / mid-navigation
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
 
 
 @app.get("/output/{name}")

@@ -52,6 +52,11 @@
         <a id="downloadLink" class="dl-btn" href="#" download hidden>⬇ Download</a>
       </div>
 
+      <div class="card shots-card" id="shotsCard" hidden>
+        <div class="lbl">Screenshots</div>
+        <div id="shotsGrid" class="shots-grid"></div>
+      </div>
+
       <div class="card log-card">
         <div class="lbl">Step log <span id="stepCount" class="muted"></span></div>
         <div id="log" class="log"></div>
@@ -63,6 +68,7 @@
       <div class="preview-bar">
         <span class="muted">Preview (read-only)</span>
         <span id="urlBar" class="urlbar"></span>
+        <button id="captureBtn" class="mini-btn" title="Save a screenshot of the current view">📸 Capture</button>
       </div>
       <div class="shot-wrap">
         <img id="shot" alt="preview" />

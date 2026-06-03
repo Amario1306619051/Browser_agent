@@ -19,6 +19,9 @@ const exportCsvBtn = $("exportCsvBtn");
 const exportXlsxBtn = $("exportXlsxBtn");
 const downloadLink = $("downloadLink");
 const urlBar = $("urlBar");
+const captureBtn = $("captureBtn");
+const shotsCard = $("shotsCard");
+const shotsGrid = $("shotsGrid");
 const shot = $("shot");
 const shotEmpty = $("shotEmpty");
 
@@ -56,6 +59,33 @@ async function doExport(fmt) {
 }
 exportCsvBtn.onclick = () => doExport("csv");
 exportXlsxBtn.onclick = () => doExport("xlsx");
+
+captureBtn.onclick = async () => {
+  const res = await api("/api/capture");
+  if (!res.ok) alert("Capture failed: " + (res.error || "no browser running"));
+  else poll();
+};
+
+let renderedShots = 0;
+function renderShots(shots) {
+  shots = shots || [];
+  if (shots.length === renderedShots) return;  // only re-render on change
+  renderedShots = shots.length;
+  shotsCard.hidden = shots.length === 0;
+  shotsGrid.innerHTML = "";
+  for (const s of shots) {
+    const a = document.createElement("a");
+    a.href = s.url;
+    a.download = s.filename;
+    a.title = s.filename;
+    a.className = "shot-thumb";
+    const img = document.createElement("img");
+    img.src = s.url;
+    img.alt = s.filename;
+    a.appendChild(img);
+    shotsGrid.appendChild(a);
+  }
+}
 
 toggleBtn.onclick = async () => {
   // aiEnabled true  -> we want to PAUSE (take over)
@@ -142,6 +172,7 @@ function applyState(s) {
     exportCard.hidden = true;
   }
 
+  renderShots(s.shots || []);
   renderLogs(s.logs || []);
 }
 

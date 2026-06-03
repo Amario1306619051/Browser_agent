@@ -34,6 +34,20 @@ def _cell(v):
     return str(v)
 
 
+def save_image(data: bytes, filename: str = "shot", ext: str = "png") -> dict:
+    """Write screenshot bytes to output/<name>.<ext>, never overwriting an
+    existing file. Returns {filename, url}."""
+    config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    name = _safe_name(filename, "shot")
+    path = config.OUTPUT_DIR / f"{name}.{ext}"
+    i = 2
+    while path.exists():
+        path = config.OUTPUT_DIR / f"{name}_{i}.{ext}"
+        i += 1
+    path.write_bytes(data)
+    return {"filename": path.name, "url": f"/output/{path.name}"}
+
+
 def write_table(rows: list[dict], filename: str, fmt: str = "xlsx", columns=None) -> dict:
     """Write `rows` to output/<name>.<fmt>. Returns {filename, rows, columns, url, format}."""
     rows = [r for r in (rows or []) if isinstance(r, dict)]
