@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Browser Agent</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">🤖 AI Browser Agent</div>
+    <div class="state-chip" id="stateChip">idle</div>
+  </header>
+
+  <main>
+    <!-- Left: control + log -->
+    <section class="panel">
+      <div class="card">
+        <label class="lbl">Task for the AI (prompt)</label>
+        <textarea id="task" rows="3" placeholder="e.g. Open Wikipedia, find the article about Borobudur, and tell me the year it was built"></textarea>
+        <label class="lbl">Start URL (optional)</label>
+        <input id="startUrl" type="text" placeholder="leave empty to let the AI decide — e.g. https://google.com" />
+        <div class="row">
+          <button id="startBtn" class="primary">▶ Start</button>
+          <button id="stopBtn" class="ghost" disabled>■ Stop</button>
+        </div>
+      </div>
+
+      <div class="card takeover">
+        <div class="takeover-head">
+          <span>Manual control</span>
+          <span class="mode-dot" id="modeDot"></span>
+        </div>
+        <p class="hint">If you hit a Cloudflare / CAPTCHA / login wall, click this button to
+          take over. Do it yourself directly in the <b>Chromium window</b>, then click again
+          to hand control back to the AI.</p>
+        <button id="toggleBtn" class="toggle" disabled>✋ Take Over (Manual)</button>
+      </div>
+
+      <div class="card result-card" id="resultCard" hidden>
+        <div class="lbl">Result</div>
+        <div id="resultText"></div>
+      </div>
+
+      <div class="card log-card">
+        <div class="lbl">Step log <span id="stepCount" class="muted"></span></div>
+        <div id="log" class="log"></div>
+      </div>
+    </section>
+
+    <!-- Right: live preview -->
+    <section class="preview">
+      <div class="preview-bar">
+        <span class="muted">Preview (read-only)</span>
+        <span id="urlBar" class="urlbar"></span>
+      </div>
+      <div class="shot-wrap">
+        <img id="shot" alt="preview" />
+        <div id="shotEmpty" class="shot-empty">Browser not running yet.<br>Start a task first.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
