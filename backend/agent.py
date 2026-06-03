@@ -67,6 +67,7 @@ class AgentSession:
         # Data the agent collects during a run, for CSV/XLSX export.
         self.data_rows: list[dict] = []
         self.data_columns: list[str] = []
+        self._row_seen: set = set()  # row signatures, for dedupe across scrolls
         self.last_export: dict | None = None
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
@@ -150,6 +151,7 @@ class AgentSession:
         self._safety_ack = False
         self.data_rows = []
         self.data_columns = []
+        self._row_seen = set()
         self.last_export = None
         if self.ai_enabled is None:
             self.ai_enabled = asyncio.Event()
@@ -215,13 +217,23 @@ class AgentSession:
                 if action == "record_rows":
                     rows = decision.get("rows")
                     if isinstance(rows, list):
-                        clean = [r for r in rows if isinstance(r, dict)]
-                        self.data_rows.extend(clean)
-                        for r in clean:
+                        new = dup = 0
+                        for r in rows:
+                            if not isinstance(r, dict):
+                                continue
+                            sig = tuple(sorted((str(k), str(v).strip()) for k, v in r.items()))
+                            if sig in self._row_seen:  # dedupe re-records across scrolls
+                                dup += 1
+                                continue
+                            self._row_seen.add(sig)
+                            self.data_rows.append(r)
                             for k in r.keys():
                                 if str(k) not in self.data_columns:
                                     self.data_columns.append(str(k))
-                        self._log("result", f"recorded {len(clean)} row(s) (total {len(self.data_rows)})")
+                            new += 1
+                        msg = f"recorded {new} new row(s) (total {len(self.data_rows)}"
+                        msg += f", skipped {dup} dupe(s))" if dup else ")"
+                        self._log("result", msg)
                     else:
                         self._log("error", "record_rows needs a 'rows' list")
                     continue

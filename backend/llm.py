@@ -60,6 +60,10 @@ _SYSTEM = (
     "item, using EXACTLY the column names the user asked for as keys. Call record_rows "
     "across as many steps as you need, then call export once at the end (format 'xlsx' for "
     "Excel, 'csv' otherwise). Don't dump everything in one giant action — record in batches.\n"
+    "- Fill EVERY requested column with the item's real visible value — never leave one "
+    "blank. For a link/URL column, copy the element's FULL href shown after '->' in the "
+    "element list (not its visible text). Only record items you haven't recorded yet — "
+    "after scrolling, record the NEW items, not ones already captured.\n"
     "- Use ONLY element indices that appear in the current list. The list is rebuilt "
     "every turn — never reuse an old index.\n"
     "- One clear step at a time. After typing a search query, set submit:true.\n"
@@ -113,6 +117,13 @@ def _extract_json(s: str) -> dict:
     raise ValueError(f"unbalanced JSON in: {s[:200]!r}")
 
 
+def _short_href(href: str) -> str:
+    # Drop query string / fragment (mostly tracking params) so the model sees the
+    # full, clean URL path instead of a path truncated mid-slug.
+    href = href.split("#", 1)[0].split("?", 1)[0]
+    return href[:200]
+
+
 def _elements_block(elements: list[dict]) -> str:
     lines = []
     for e in elements:
@@ -123,7 +134,7 @@ def _elements_block(elements: list[dict]) -> str:
         line = f'[{e.get("index")}] <{tag}> "{label}"'
         href = e.get("href") or ""
         if href:
-            line += f" -> {href[:60]}"
+            line += f" -> {_short_href(href)}"
         lines.append(line)
     return "\n".join(lines) or "(no interactive elements found)"
 
