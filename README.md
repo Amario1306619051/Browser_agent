@@ -110,5 +110,9 @@ window opens — that's where you can take over manually when needed.
   injection. Run it only on sites you trust, and keep an eye on it.
 - It won't auto-confirm payments / purchases / account deletions — it pauses and
   asks you first.
+- For anti-bot sites (e.g. Tokopedia), install **Google Chrome** and keep
+  `AGENT_BROWSER_CHANNEL=chrome` — its headless mode (with the `HeadlessChrome` UA
+  token stripped) isn't blocked like Playwright's bundled headless shell. It still
+  falls back to bundled Chromium if Chrome isn't installed.
 - The first step can take ~30–60s if the model is cold-starting; calls retry
   automatically until the model is warm.

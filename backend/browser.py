@@ -130,12 +130,13 @@ class Browser:
         self.frame_seq = 0
         self._cdp = None
         self._cdp_page = None
+        self._channel = None  # resolved browser channel (chrome / bundled)
 
     async def start(self) -> None:
         if self._started:
             return
         self._pw = await async_playwright().start()
-        self._ctx = await self._pw.chromium.launch_persistent_context(
+        launch_kwargs = dict(
             user_data_dir=config.USER_DATA_DIR,
             headless=config.HEADLESS,
             viewport={"width": config.VIEWPORT_W, "height": config.VIEWPORT_H},
@@ -147,9 +148,45 @@ class Browser:
             ignore_default_args=["--enable-automation"],
             user_agent=config.USER_AGENT or None,
         )
+        self._ctx = await self._open(launch_kwargs)
         self.page = self._ctx.pages[0] if self._ctx.pages else await self._ctx.new_page()
+
+        # Chrome headless still puts "HeadlessChrome" in the UA, which anti-bot
+        # systems (DataDome on Tokopedia etc.) block at the network layer. Strip it
+        # — keeping the real version so client hints stay consistent — then relaunch
+        # with the clean UA (context-level, so it applies to every request/tab).
+        if not config.USER_AGENT:
+            try:
+                ua = await self.page.evaluate("() => navigator.userAgent")
+                if "Headless" in ua:
+                    launch_kwargs["user_agent"] = ua.replace("HeadlessChrome", "Chrome").replace("Headless", "")
+                    await self._ctx.close()
+                    self._ctx = await self._open(launch_kwargs)
+                    self.page = self._ctx.pages[0] if self._ctx.pages else await self._ctx.new_page()
+            except Exception as e:  # noqa: BLE001
+                log.warning("UA cleanup skipped: %s", e)
+
         self._started = True
-        log.info("Browser started (headless=%s, profile=%s)", config.HEADLESS, config.USER_DATA_DIR)
+        log.info("Browser started (channel=%s, headless=%s, profile=%s)",
+                 self._channel or "chromium", config.HEADLESS, config.USER_DATA_DIR)
+
+    async def _open(self, kwargs):
+        """Launch the persistent context, preferring the configured channel (real
+        Chrome) and falling back to bundled Chromium. The resolved channel is cached
+        in self._channel so a relaunch (UA cleanup) reuses the same one."""
+        if self._channel is None:
+            chan = config.BROWSER_CHANNEL
+            if chan:
+                try:
+                    ctx = await self._pw.chromium.launch_persistent_context(channel=chan, **kwargs)
+                    self._channel = chan
+                    return ctx
+                except Exception as e:  # noqa: BLE001
+                    log.warning("Browser channel '%s' unavailable (%s) — using bundled Chromium", chan, e)
+            self._channel = ""
+        if self._channel:
+            return await self._pw.chromium.launch_persistent_context(channel=self._channel, **kwargs)
+        return await self._pw.chromium.launch_persistent_context(**kwargs)
 
     @property
     def started(self) -> bool:

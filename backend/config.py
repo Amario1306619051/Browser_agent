@@ -44,6 +44,11 @@ HEADLESS = os.getenv("AGENT_HEADLESS", "true").strip().lower() in ("1", "true", 
 # in the dashboard preview back to page coordinates).
 VIEWPORT_W = int(os.getenv("AGENT_VIEWPORT_W", "1280"))
 VIEWPORT_H = int(os.getenv("AGENT_VIEWPORT_H", "800"))
+# Prefer real Google Chrome — its (new) headless mode passes anti-bot checks that
+# block Playwright's bundled "headless shell" (e.g. Tokopedia resets the HTTP/2
+# connection). Empty = always use bundled Chromium. Falls back automatically if the
+# channel isn't installed.
+BROWSER_CHANNEL = os.getenv("AGENT_BROWSER_CHANNEL", "chrome").strip()
 # Persistent Chrome profile so logins / Cloudflare clearance survive restarts.
 USER_DATA_DIR = os.getenv("AGENT_USER_DATA_DIR", str(BASE_DIR / ".profile"))
 # Optional custom UA (left blank = Playwright default Chromium UA).
