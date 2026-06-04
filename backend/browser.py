@@ -45,7 +45,9 @@ _OBSERVE_JS = r"""
 
   const overlay = document.createElement('div');
   overlay.id = '__ai_overlay__';
-  overlay.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;' +
+  // position:absolute (in document coords) so the boxes scroll WITH the content
+  // instead of staying frozen at viewport positions while the page moves.
+  overlay.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;' +
       'pointer-events:none;z-index:2147483647';
 
   const out = [];
@@ -72,8 +74,9 @@ _OBSERVE_JS = r"""
     });
 
     const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;width:' +
-        r.width + 'px;height:' + r.height + 'px;border:2px solid #E8FF3A;box-sizing:border-box;';
+    box.style.cssText = 'position:absolute;left:' + (r.left + window.scrollX) + 'px;top:' +
+        (r.top + window.scrollY) + 'px;width:' + r.width + 'px;height:' + r.height +
+        'px;border:2px solid #E8FF3A;box-sizing:border-box;';
     const tagEl = document.createElement('div');
     tagEl.textContent = idx;
     tagEl.style.cssText = 'position:absolute;left:0;top:0;transform:translateY(-100%);' +
