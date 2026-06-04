@@ -238,6 +238,12 @@ class Browser:
             x, y = self._xy(msg.get("x"), msg.get("y"))
             await self.page.mouse.move(x, y)
         elif t == "scroll":
+            # Move to the cursor first so the wheel scrolls the content under it,
+            # not whatever sits at (0,0) (often a sticky header that won't scroll).
+            x, y = msg.get("x"), msg.get("y")
+            if x is not None and y is not None:
+                cx, cy = self._xy(x, y)
+                await self.page.mouse.move(cx, cy)
             await self.page.mouse.wheel(self._num(msg.get("dx", 0), 5000),
                                         self._num(msg.get("dy", 0), 5000))
         elif t == "key":

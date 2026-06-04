@@ -266,17 +266,18 @@ function pageCoords(e) {
 screen.addEventListener("click", (e) => { if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "left" }); screenWrap.focus({ preventScroll: true }); });
 screen.addEventListener("dblclick", (e) => { if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "left", clicks: 2 }); });
 screen.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "right" }); });
-let scrollDX = 0, scrollDY = 0, scrollTimer = null;
+let scrollDX = 0, scrollDY = 0, scrollX = 0, scrollY = 0, scrollTimer = null;
 function flushScroll() {
   scrollTimer = null;
-  if (scrollDX || scrollDY) { wsSend({ t: "scroll", dx: scrollDX, dy: scrollDY }); scrollDX = scrollDY = 0; }
+  if (scrollDX || scrollDY) { wsSend({ t: "scroll", dx: scrollDX, dy: scrollDY, x: scrollX, y: scrollY }); scrollDX = scrollDY = 0; }
 }
 screen.addEventListener("wheel", (e) => {
   if (!interactive) return; e.preventDefault();
   let dx = e.deltaX, dy = e.deltaY;
   if (e.deltaMode === 1) { dx *= 16; dy *= 16; } else if (e.deltaMode === 2) { dx *= 800; dy *= 800; }
-  // Coalesce rapid wheel events into one message per frame so we don't flood the
-  // server (and the page scrolls in fewer, bigger, smoother steps).
+  // Coalesce rapid wheel events into one message per frame (less flooding, smoother)
+  // and remember the cursor position so the server scrolls the content under it.
+  const p = pageCoords(e); scrollX = p.x; scrollY = p.y;
   scrollDX += dx; scrollDY += dy;
   if (!scrollTimer) scrollTimer = setTimeout(flushScroll, 30);
 }, { passive: false });
