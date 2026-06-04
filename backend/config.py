@@ -48,6 +48,9 @@ VIEWPORT_H = int(os.getenv("AGENT_VIEWPORT_H", "800"))
 # laptops / heavy pages); the screencast only captures while the dashboard is open.
 STREAM_QUALITY = int(os.getenv("AGENT_STREAM_QUALITY", "45"))
 STREAM_EVERY_NTH = max(1, int(os.getenv("AGENT_STREAM_EVERY_NTH", "2")))
+# Downscale the streamed frame (the browser viewport stays VIEWPORT_W, so clicks
+# still map correctly). Smaller = much smaller/faster frames, blurrier preview.
+STREAM_MAX_WIDTH = max(200, min(int(os.getenv("AGENT_STREAM_MAX_WIDTH", str(VIEWPORT_W))), VIEWPORT_W))
 # Prefer real Google Chrome — its (new) headless mode passes anti-bot checks that
 # block Playwright's bundled "headless shell" (e.g. Tokopedia resets the HTTP/2
 # connection). Empty = always use bundled Chromium. Falls back automatically if the

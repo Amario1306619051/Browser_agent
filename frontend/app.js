@@ -258,9 +258,10 @@ function paintMode() {
 }
 function pageCoords(e) {
   const r = screen.getBoundingClientRect();
-  const nw = screen.naturalWidth || frameW, nh = screen.naturalHeight || frameH;
-  const x = (e.clientX - r.left) / r.width * nw, y = (e.clientY - r.top) / r.height * nh;
-  return { x: Math.max(0, Math.min(x, nw)), y: Math.max(0, Math.min(y, nh)) };
+  // Map to the LOGICAL viewport (frameW/H), not the image's natural size — the
+  // stream may be downscaled but the page viewport is still frameW × frameH.
+  const x = (e.clientX - r.left) / r.width * frameW, y = (e.clientY - r.top) / r.height * frameH;
+  return { x: Math.max(0, Math.min(x, frameW)), y: Math.max(0, Math.min(y, frameH)) };
 }
 screen.addEventListener("click", (e) => { if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "left" }); screenWrap.focus({ preventScroll: true }); });
 screen.addEventListener("dblclick", (e) => { if (!interactive) return; const p = pageCoords(e); wsSend({ t: "click", x: p.x, y: p.y, button: "left", clicks: 2 }); });

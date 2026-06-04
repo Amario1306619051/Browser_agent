@@ -289,9 +289,11 @@ class Browser:
         try:
             cdp = await self._ctx.new_cdp_session(self.page)
             cdp.on("Page.screencastFrame", self._on_screencast_frame)
+            mw = config.STREAM_MAX_WIDTH
+            mh = max(1, round(mw / config.VIEWPORT_W * config.VIEWPORT_H))
             await cdp.send("Page.startScreencast", {
                 "format": "jpeg", "quality": config.STREAM_QUALITY,
-                "maxWidth": config.VIEWPORT_W, "maxHeight": config.VIEWPORT_H,
+                "maxWidth": mw, "maxHeight": mh,
                 "everyNthFrame": config.STREAM_EVERY_NTH,
             })
             self._cdp = cdp
