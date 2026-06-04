@@ -9,6 +9,7 @@ class StartReq(BaseModel):
     start_url: str | None = None
     thread_id: str | None = None
     unlimited: bool = False
+    scroll_speed: str | None = None
 
 
 class GotoReq(BaseModel):

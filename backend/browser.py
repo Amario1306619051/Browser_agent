@@ -117,6 +117,15 @@ def _normalize(url: str) -> str:
 
 
 class Browser:
+    # AI scroll speed → distance per scroll, animation steps/step-wait, and the
+    # settle pause afterwards (slower = smaller jumps + longer waits so lazy content
+    # loads and nothing is skipped).
+    SCROLL_PROFILES = {
+        "slow":   {"amount": 400,  "steps": 8, "wait": 90, "settle": 1100},
+        "medium": {"amount": 700,  "steps": 6, "wait": 70, "settle": 500},
+        "fast":   {"amount": 1100, "steps": 5, "wait": 45, "settle": 200},
+    }
+
     def __init__(self) -> None:
         self._pw = None
         self._ctx = None
@@ -131,6 +140,7 @@ class Browser:
         self._cdp = None
         self._cdp_page = None
         self._channel = None  # resolved browser channel (chrome / bundled)
+        self.scroll_speed = config.SCROLL_SPEED  # slow | medium | fast
 
     async def start(self) -> None:
         if self._started:
@@ -403,18 +413,20 @@ class Browser:
                 return f"typed into [{i}]: {text!r}" + (" + Enter" if d.get("submit") else "")
 
             if a == "scroll":
-                amt = int(d.get("amount", 600))
+                prof = self.SCROLL_PROFILES.get(self.scroll_speed, self.SCROLL_PROFILES["medium"])
+                amt = prof["amount"]
                 if str(d.get("direction", "down")).lower() == "up":
-                    amt = -abs(amt)
+                    amt = -amt
                 # Scroll with a REAL mouse wheel over the page centre, like a human —
                 # window.scrollBy silently does nothing on sites whose scroll lives in
-                # an inner container. Step it so it's visibly animated in the preview.
+                # an inner container. Stepped so it's visibly animated, then a settle
+                # pause so lazy content can load (length depends on the speed profile).
                 await self.page.mouse.move(config.VIEWPORT_W / 2, config.VIEWPORT_H / 2)
-                steps = 6
-                for _ in range(steps):
-                    await self.page.mouse.wheel(0, amt / steps)
-                    await self.page.wait_for_timeout(70)
-                return f"scrolled {amt}px"
+                for _ in range(prof["steps"]):
+                    await self.page.mouse.wheel(0, amt / prof["steps"])
+                    await self.page.wait_for_timeout(prof["wait"])
+                await self.page.wait_for_timeout(prof["settle"])
+                return f"scrolled {amt}px ({self.scroll_speed})"
 
             if a == "go_back":
                 await self.page.go_back(timeout=15000)

@@ -103,8 +103,13 @@ body {
 /* ===== Composer ===== */
 .composer { border-top: 1px solid var(--line); padding: 12px 16px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
 .artifacts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
-.composer-tools { display: flex; align-items: center; gap: 8px; }
-.start-url { flex: 1; }
+.composer-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.start-url { flex: 1; min-width: 140px; }
+.sel {
+  background: #23262e; color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 9px; font-size: 12px; cursor: pointer;
+}
+.sel:focus { outline: none; border-color: var(--accent-dim); }
 .chk {
   display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
   font-size: 12px; color: var(--muted); cursor: pointer;
