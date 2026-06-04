@@ -355,6 +355,10 @@ class AgentSession:
 
             if self._stop:
                 self._save_pending()  # stopping mid-run still saves what was gathered
+                if not self.result:
+                    self.result = (f"⏹ Stopped — collected {len(self.data_rows)} row(s)."
+                                   if self.data_rows else "⏹ Stopped before finishing.")
+                self._remember()  # keep the (partial) task in the chat history
                 self.state = "idle"
                 self._log("info", "Stopped by user.")
             elif self.state not in ("done", "error"):
