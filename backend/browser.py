@@ -68,7 +68,7 @@ _OBSERVE_JS = r"""
       tag: el.tagName.toLowerCase(),
       type: el.getAttribute('type') || '',
       label: label,
-      href: el.getAttribute('href') || ''
+      href: el.href || el.getAttribute('href') || ''  // el.href is absolute for links
     });
 
     const box = document.createElement('div');

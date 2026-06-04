@@ -121,6 +121,21 @@ class AgentSession:
         self.last_export = ref
         return ref
 
+    @staticmethod
+    def _resolve_refs(row: dict, obs: dict) -> dict:
+        """Resolve {"href_of": <element index>} values to that element's EXACT full
+        href from the observation — so link columns get the real URL, no copy/
+        truncation errors and no grabbing the wrong (visible-text) link."""
+        by_idx = {e.get("index"): e for e in obs.get("elements", [])}
+        out = {}
+        for k, v in row.items():
+            if isinstance(v, dict) and "href_of" in v:
+                e = by_idx.get(v.get("href_of"))
+                out[k] = (e.get("href") or "") if e else ""
+            else:
+                out[k] = v
+        return out
+
     def _remember(self) -> None:
         """Persist this finished task + its result into the thread's memory."""
         if self.thread_id and self.result:
@@ -262,6 +277,7 @@ class AgentSession:
                         for r in rows:
                             if not isinstance(r, dict):
                                 continue
+                            r = self._resolve_refs(r, obs)  # {"href_of": N} → real URL
                             sig = tuple(sorted((str(k), str(v).strip()) for k, v in r.items()))
                             if sig in self._row_seen:  # dedupe re-records across scrolls
                                 dup += 1
