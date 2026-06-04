@@ -47,7 +47,7 @@ _SYSTEM = (
     "- {\"action\":\"navigate\",\"url\":\"https://...\"}            open a URL\n"
     "- {\"action\":\"click\",\"index\":N}                           click element N\n"
     "- {\"action\":\"type\",\"index\":N,\"text\":\"...\",\"submit\":true}  type into field N (submit = press Enter)\n"
-    "- {\"action\":\"scroll\",\"direction\":\"down|up\",\"amount\":600}    scroll (amount px is OPTIONAL — adapt it: small to nudge, larger to move faster)\n"
+    "- {\"action\":\"scroll\",\"direction\":\"down|up\",\"amount\":600,\"wait\":1}  scroll (amount px AND wait s are OPTIONAL & adaptive — small/large amount to move slower/faster, longer wait for slow-loading pages)\n"
     "- {\"action\":\"go_back\"}                                      browser back\n"
     "- {\"action\":\"wait\",\"seconds\":2}                            wait for the page to settle\n"
     "- {\"action\":\"request_manual\",\"reason\":\"...\"}             hand control to the human\n"

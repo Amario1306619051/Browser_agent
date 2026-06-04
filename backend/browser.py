@@ -456,8 +456,17 @@ class Browser:
                     if await self.page.evaluate(_SCROLL_JS, amt / prof["steps"]):
                         moved = True
                     await self.page.wait_for_timeout(prof["wait"])
-                # Custom delay (seconds) overrides the preset's settle pause.
-                settle = int(min(max(self.scroll_delay, 0), 30) * 1000) if self.scroll_delay else prof["settle"]
+                # Settle pause, adaptive: the model's own "wait" (s) wins, else the
+                # user's delay setting, else the speed preset.
+                if d.get("wait") is not None:
+                    try:
+                        settle = int(min(max(float(d["wait"]), 0), 30) * 1000)
+                    except (TypeError, ValueError):
+                        settle = prof["settle"]
+                elif self.scroll_delay:
+                    settle = int(min(max(self.scroll_delay, 0), 30) * 1000)
+                else:
+                    settle = prof["settle"]
                 await self.page.wait_for_timeout(settle)
                 return (f"scrolled {amt}px ({self.scroll_speed})"
                         + ("" if moved else " — page did NOT move (likely the end / nothing more to load)"))
