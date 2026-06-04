@@ -406,11 +406,14 @@ class Browser:
                 amt = int(d.get("amount", 600))
                 if str(d.get("direction", "down")).lower() == "up":
                     amt = -abs(amt)
-                # Smooth (animated) scroll so you can actually watch it move in the
-                # live preview instead of it teleporting to the new position.
-                await self.page.evaluate(
-                    "(y) => window.scrollBy({ top: y, left: 0, behavior: 'smooth' })", amt)
-                await self.page.wait_for_timeout(650)  # let the animation play + stream
+                # Scroll with a REAL mouse wheel over the page centre, like a human —
+                # window.scrollBy silently does nothing on sites whose scroll lives in
+                # an inner container. Step it so it's visibly animated in the preview.
+                await self.page.mouse.move(config.VIEWPORT_W / 2, config.VIEWPORT_H / 2)
+                steps = 6
+                for _ in range(steps):
+                    await self.page.mouse.wheel(0, amt / steps)
+                    await self.page.wait_for_timeout(70)
                 return f"scrolled {amt}px"
 
             if a == "go_back":
