@@ -273,6 +273,10 @@ class Browser:
         self._cdp = None
         self._cdp_page = None
 
+    async def stop_stream(self) -> None:
+        """Stop the screencast (called when no dashboard is watching, to save CPU)."""
+        await self._stop_screencast()
+
     async def ensure_screencast(self) -> None:
         """(Re)attach the CDP screencast to the current page. Cheap to call on a
         loop — it only re-attaches when the active page changes (new tab/popup)."""
@@ -286,9 +290,9 @@ class Browser:
             cdp = await self._ctx.new_cdp_session(self.page)
             cdp.on("Page.screencastFrame", self._on_screencast_frame)
             await cdp.send("Page.startScreencast", {
-                "format": "jpeg", "quality": 55,
+                "format": "jpeg", "quality": config.STREAM_QUALITY,
                 "maxWidth": config.VIEWPORT_W, "maxHeight": config.VIEWPORT_H,
-                "everyNthFrame": 1,
+                "everyNthFrame": config.STREAM_EVERY_NTH,
             })
             self._cdp = cdp
             self._cdp_page = self.page

@@ -146,12 +146,16 @@ def _input_allowed() -> bool:
 # page renders. Per-tab pumps just forward the latest frame — no screenshotting — so
 # the stream is smooth and N tabs don't multiply the cost.
 _manager: asyncio.Task | None = None
+_ws_clients = 0  # number of dashboards currently watching
 
 
 async def _screencast_manager():
     while True:
         try:
-            await session.browser.ensure_screencast()
+            if _ws_clients > 0:
+                await session.browser.ensure_screencast()
+            elif session.browser.started:
+                await session.browser.stop_stream()  # nobody watching → save CPU
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(0.5)
@@ -171,7 +175,9 @@ async def ws_screen(ws: WebSocket):
     client sends click/scroll/key/text events, applied only when the AI isn't
     running (manual takeover, re-checked under the lock in session.manual_input).
     """
+    global _ws_clients
     await ws.accept()
+    _ws_clients += 1
     _ensure_manager()
 
     async def pump():
@@ -191,7 +197,7 @@ async def ws_screen(ws: WebSocket):
                     })
                 except Exception:  # noqa: BLE001 — client gone
                     return
-            await asyncio.sleep(0.03)
+            await asyncio.sleep(0.05)  # cap forwarding at ~20fps (lighter on the client)
 
     pump_task = asyncio.create_task(pump())
     try:
@@ -202,6 +208,7 @@ async def ws_screen(ws: WebSocket):
     except Exception:  # noqa: BLE001
         pass
     finally:
+        _ws_clients -= 1
         pump_task.cancel()
         try:
             await pump_task

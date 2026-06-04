@@ -44,6 +44,10 @@ HEADLESS = os.getenv("AGENT_HEADLESS", "true").strip().lower() in ("1", "true", 
 # in the dashboard preview back to page coordinates).
 VIEWPORT_W = int(os.getenv("AGENT_VIEWPORT_W", "1280"))
 VIEWPORT_H = int(os.getenv("AGENT_VIEWPORT_H", "800"))
+# Live-stream tuning. Lower quality / higher everyNth = lighter on the CPU (helps on
+# laptops / heavy pages); the screencast only captures while the dashboard is open.
+STREAM_QUALITY = int(os.getenv("AGENT_STREAM_QUALITY", "45"))
+STREAM_EVERY_NTH = max(1, int(os.getenv("AGENT_STREAM_EVERY_NTH", "2")))
 # Prefer real Google Chrome — its (new) headless mode passes anti-bot checks that
 # block Playwright's bundled "headless shell" (e.g. Tokopedia resets the HTTP/2
 # connection). Empty = always use bundled Chromium. Falls back automatically if the
