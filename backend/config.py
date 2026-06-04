@@ -39,6 +39,8 @@ VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "30"))
 # Default AI scroll speed: slow | medium | fast (per-task override from the UI).
 SCROLL_SPEED = os.getenv("AGENT_SCROLL_SPEED", "medium").strip().lower()
+# Pause (seconds) after each AI scroll. 0 = use the speed preset's settle pause.
+SCROLL_DELAY = float(os.getenv("AGENT_SCROLL_DELAY", "0") or 0)
 # Headless by default — the browser is streamed into the dashboard (no separate
 # window), and you take over right there in the live preview.
 HEADLESS = os.getenv("AGENT_HEADLESS", "true").strip().lower() in ("1", "true", "yes")

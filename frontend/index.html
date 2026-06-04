@@ -33,11 +33,13 @@
         <div id="artifacts" class="artifacts" hidden></div>
         <div class="composer-tools">
           <input id="startUrl" class="start-url" type="text" placeholder="Start URL (optional)" />
-          <select id="scrollSpeed" class="sel" title="How fast the AI scrolls">
+          <select id="scrollSpeed" class="sel" title="How far the AI scrolls each step">
             <option value="slow">Scroll: Slow</option>
             <option value="medium">Scroll: Medium</option>
             <option value="fast">Scroll: Fast</option>
           </select>
+          <input id="scrollDelay" class="num" type="number" min="0" max="30" step="0.5"
+                 placeholder="delay s" title="Pause after each scroll, in seconds (empty = use the preset)" />
           <label id="unlimitedLbl" class="chk" title="No 30-step limit — runs until the AI is done or you Stop">
             <input type="checkbox" id="unlimitedChk" /> ♾️ Unlimited
           </label>

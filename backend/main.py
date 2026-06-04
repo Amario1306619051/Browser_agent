@@ -52,7 +52,8 @@ async def index():
 @app.post("/api/start")
 async def start(req: StartReq):
     try:
-        await session.start(req.task, req.start_url, req.thread_id, req.unlimited, req.scroll_speed)
+        await session.start(req.task, req.start_url, req.thread_id, req.unlimited,
+                            req.scroll_speed, req.scroll_delay)
         return {"ok": True}
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)

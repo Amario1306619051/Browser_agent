@@ -12,6 +12,7 @@ const artifacts = $("artifacts");
 const startUrlEl = $("startUrl");
 const unlimitedChk = $("unlimitedChk");
 const scrollSpeed = $("scrollSpeed");
+const scrollDelay = $("scrollDelay");
 const toggleBtn = $("toggleBtn");
 const stopBtn = $("stopBtn");
 const taskEl = $("task");
@@ -202,6 +203,7 @@ startBtn.onclick = async () => {
     thread_id: activeThread,
     unlimited: unlimitedChk.checked,
     scroll_speed: scrollSpeed.value,
+    scroll_delay: scrollDelay.value !== "" ? parseFloat(scrollDelay.value) : null,
   });
   if (!res.ok) { alert("Failed to start: " + (res.error || "unknown")); startBtn.disabled = false; }
   else { taskEl.value = ""; autoGrow(); }
@@ -335,6 +337,8 @@ unlimitedChk.checked = localStorage.getItem("ba_unlimited") === "1";
 unlimitedChk.addEventListener("change", () => localStorage.setItem("ba_unlimited", unlimitedChk.checked ? "1" : "0"));
 scrollSpeed.value = localStorage.getItem("ba_scrollSpeed") || "medium";
 scrollSpeed.addEventListener("change", () => localStorage.setItem("ba_scrollSpeed", scrollSpeed.value));
+scrollDelay.value = localStorage.getItem("ba_scrollDelay") || "";
+scrollDelay.addEventListener("change", () => localStorage.setItem("ba_scrollDelay", scrollDelay.value));
 activeThread = localStorage.getItem("ba_activeThread") || newThreadId();
 localStorage.setItem("ba_activeThread", activeThread);
 loadThreads();

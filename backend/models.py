@@ -10,6 +10,7 @@ class StartReq(BaseModel):
     thread_id: str | None = None
     unlimited: bool = False
     scroll_speed: str | None = None
+    scroll_delay: float | None = None
 
 
 class GotoReq(BaseModel):

@@ -141,6 +141,7 @@ class Browser:
         self._cdp_page = None
         self._channel = None  # resolved browser channel (chrome / bundled)
         self.scroll_speed = config.SCROLL_SPEED  # slow | medium | fast
+        self.scroll_delay = config.SCROLL_DELAY  # seconds; 0 = use the preset settle
 
     async def start(self) -> None:
         if self._started:
@@ -425,8 +426,10 @@ class Browser:
                 for _ in range(prof["steps"]):
                     await self.page.mouse.wheel(0, amt / prof["steps"])
                     await self.page.wait_for_timeout(prof["wait"])
-                await self.page.wait_for_timeout(prof["settle"])
-                return f"scrolled {amt}px ({self.scroll_speed})"
+                # Custom delay (seconds) overrides the preset's settle pause.
+                settle = int(min(max(self.scroll_delay, 0), 30) * 1000) if self.scroll_delay else prof["settle"]
+                await self.page.wait_for_timeout(settle)
+                return f"scrolled {amt}px ({self.scroll_speed}, {settle}ms)"
 
             if a == "go_back":
                 await self.page.go_back(timeout=15000)

@@ -172,7 +172,8 @@ class AgentSession:
 
     # ---- lifecycle -----------------------------------------------------------
     async def start(self, task: str, start_url: str | None = None, thread_id: str | None = None,
-                    unlimited: bool = False, scroll_speed: str | None = None) -> None:
+                    unlimited: bool = False, scroll_speed: str | None = None,
+                    scroll_delay: float | None = None) -> None:
         if self.state in ("running", "paused"):
             raise RuntimeError("A task is already running. Stop it before starting a new one.")
         # A previous run may still be finishing its terminal step (state already
@@ -197,6 +198,11 @@ class AgentSession:
         self.unlimited = bool(unlimited)
         if scroll_speed in Browser.SCROLL_PROFILES:
             self.browser.scroll_speed = scroll_speed
+        if scroll_delay is not None:
+            try:
+                self.browser.scroll_delay = max(0.0, float(scroll_delay))
+            except (TypeError, ValueError):
+                pass
         self.data_rows = []
         self.data_columns = []
         self._row_seen = set()
