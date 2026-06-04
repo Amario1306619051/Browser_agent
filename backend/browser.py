@@ -106,6 +106,30 @@ _BAD_SCHEME_RE = re.compile(
 )
 
 
+# Scroll the RIGHT thing by `dy`: walk up from the page-centre element to the
+# nearest real scroll container and scroll it; fall back to the window. Returns
+# whether anything actually moved (so the agent knows when it hit the end). Setting
+# scrollTop / window.scrollBy fires 'scroll' events, so infinite-scroll still loads.
+_SCROLL_JS = r"""
+(dy) => {
+  const cx = (window.innerWidth / 2) | 0, cy = (window.innerHeight / 2) | 0;
+  let n = document.elementFromPoint(cx, cy);
+  while (n && n !== document.body && n !== document.documentElement) {
+    const s = getComputedStyle(n);
+    if (/(auto|scroll|overlay)/.test(s.overflowY) && n.scrollHeight > n.clientHeight + 4) {
+      const t0 = n.scrollTop;
+      n.scrollTop += dy;
+      if (n.scrollTop !== t0) return true;
+    }
+    n = n.parentElement;
+  }
+  const y0 = window.scrollY;
+  window.scrollBy(0, dy);
+  return window.scrollY !== y0;
+}
+"""
+
+
 def _normalize(url: str) -> str:
     u = (url or "").strip()
     m = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://", u)
@@ -418,21 +442,25 @@ class Browser:
 
             if a == "scroll":
                 prof = self.SCROLL_PROFILES.get(self.scroll_speed, self.SCROLL_PROFILES["medium"])
-                amt = prof["amount"]
+                # Adaptive: the model may set its own pixel amount; else the speed preset.
+                try:
+                    amt = int(d.get("amount") or prof["amount"])
+                except (TypeError, ValueError):
+                    amt = prof["amount"]
+                amt = max(50, min(abs(amt), 4000))
                 if str(d.get("direction", "down")).lower() == "up":
                     amt = -amt
-                # Scroll with a REAL mouse wheel over the page centre, like a human —
-                # window.scrollBy silently does nothing on sites whose scroll lives in
-                # an inner container. Stepped so it's visibly animated, then a settle
-                # pause so lazy content can load (length depends on the speed profile).
-                await self.page.mouse.move(config.VIEWPORT_W / 2, config.VIEWPORT_H / 2)
+                # Stepped (visibly animated) scroll of the correct scroll container.
+                moved = False
                 for _ in range(prof["steps"]):
-                    await self.page.mouse.wheel(0, amt / prof["steps"])
+                    if await self.page.evaluate(_SCROLL_JS, amt / prof["steps"]):
+                        moved = True
                     await self.page.wait_for_timeout(prof["wait"])
                 # Custom delay (seconds) overrides the preset's settle pause.
                 settle = int(min(max(self.scroll_delay, 0), 30) * 1000) if self.scroll_delay else prof["settle"]
                 await self.page.wait_for_timeout(settle)
-                return f"scrolled {amt}px ({self.scroll_speed}, {settle}ms)"
+                return (f"scrolled {amt}px ({self.scroll_speed})"
+                        + ("" if moved else " — page did NOT move (likely the end / nothing more to load)"))
 
             if a == "go_back":
                 await self.page.go_back(timeout=15000)

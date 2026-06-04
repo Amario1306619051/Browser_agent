@@ -47,7 +47,7 @@ _SYSTEM = (
     "- {\"action\":\"navigate\",\"url\":\"https://...\"}            open a URL\n"
     "- {\"action\":\"click\",\"index\":N}                           click element N\n"
     "- {\"action\":\"type\",\"index\":N,\"text\":\"...\",\"submit\":true}  type into field N (submit = press Enter)\n"
-    "- {\"action\":\"scroll\",\"direction\":\"down|up\",\"amount\":600}    scroll the page\n"
+    "- {\"action\":\"scroll\",\"direction\":\"down|up\",\"amount\":600}    scroll (amount px is OPTIONAL — adapt it: small to nudge, larger to move faster)\n"
     "- {\"action\":\"go_back\"}                                      browser back\n"
     "- {\"action\":\"wait\",\"seconds\":2}                            wait for the page to settle\n"
     "- {\"action\":\"request_manual\",\"reason\":\"...\"}             hand control to the human\n"
@@ -93,6 +93,8 @@ _SYSTEM = (
     "- Before acting, check RECENT ACTIONS: if the task is already accomplished "
     "(e.g. the screenshot was saved, the file was exported, the answer was found), "
     "call done immediately — NEVER repeat an action that already succeeded.\n"
+    "- If a scroll result says the page did NOT move, you've hit the bottom (nothing more "
+    "to load) — stop scrolling: export/finish or try something else, don't keep scrolling.\n"
     "- When the goal is achieved, return done with a clear answer for the user."
 )
 
