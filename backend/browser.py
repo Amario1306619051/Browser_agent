@@ -406,8 +406,11 @@ class Browser:
                 amt = int(d.get("amount", 600))
                 if str(d.get("direction", "down")).lower() == "up":
                     amt = -abs(amt)
-                await self.page.evaluate("(y) => window.scrollBy(0, y)", amt)
-                await self.page.wait_for_timeout(300)
+                # Smooth (animated) scroll so you can actually watch it move in the
+                # live preview instead of it teleporting to the new position.
+                await self.page.evaluate(
+                    "(y) => window.scrollBy({ top: y, left: 0, behavior: 'smooth' })", amt)
+                await self.page.wait_for_timeout(650)  # let the animation play + stream
                 return f"scrolled {amt}px"
 
             if a == "go_back":
