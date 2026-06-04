@@ -80,6 +80,7 @@ class AgentSession:
         self.thread_memory: list[dict] = []
         self.thread_count = 0
         self.unlimited = False  # ignore the MAX_STEPS cap for this run
+        self.smart = True       # LLM thinking ON (smarter, slower)
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
     # phrase list covers English and Indonesian site labels to keep it useful on
@@ -173,7 +174,7 @@ class AgentSession:
     # ---- lifecycle -----------------------------------------------------------
     async def start(self, task: str, start_url: str | None = None, thread_id: str | None = None,
                     unlimited: bool = False, scroll_speed: str | None = None,
-                    scroll_delay: float | None = None) -> None:
+                    scroll_delay: float | None = None, smart: bool = True) -> None:
         if self.state in ("running", "paused"):
             raise RuntimeError("A task is already running. Stop it before starting a new one.")
         # A previous run may still be finishing its terminal step (state already
@@ -196,6 +197,7 @@ class AgentSession:
         self._stop = False
         self._safety_ack = False
         self.unlimited = bool(unlimited)
+        self.smart = bool(smart)
         if scroll_speed in Browser.SCROLL_PROFILES:
             self.browser.scroll_speed = scroll_speed
         if scroll_delay is not None:
@@ -253,7 +255,7 @@ class AgentSession:
                 self.last_url, self.last_title = obs.get("url", ""), obs.get("title", "")
 
                 try:
-                    decision = llm.decide(self.task, obs, self.logs, self.thread_memory)
+                    decision = llm.decide(self.task, obs, self.logs, self.thread_memory, self.smart)
                 except Exception as e:  # noqa: BLE001
                     self._log("error", f"LLM failed to decide an action: {e}")
                     await asyncio.sleep(1.0)

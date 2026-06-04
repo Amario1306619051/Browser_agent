@@ -40,6 +40,9 @@
           </select>
           <input id="scrollDelay" class="num" type="number" min="0" max="30" step="0.5"
                  placeholder="delay s" title="Pause after each scroll, in seconds (empty = use the preset)" />
+          <label class="chk" title="LLM reasoning ON — smarter (understands the task, adapts) but ~3× slower per step">
+            <input type="checkbox" id="smartChk" checked /> 🧠 Smart
+          </label>
           <label id="unlimitedLbl" class="chk" title="No 30-step limit — runs until the AI is done or you Stop">
             <input type="checkbox" id="unlimitedChk" /> ♾️ Unlimited
           </label>

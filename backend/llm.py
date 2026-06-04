@@ -201,7 +201,8 @@ def _memory_block(memory: list[dict] | None) -> str:
     )
 
 
-def decide(task: str, obs: dict, logs: list[dict], memory: list[dict] | None = None) -> dict:
+def decide(task: str, obs: dict, logs: list[dict], memory: list[dict] | None = None,
+           think: bool = True) -> dict:
     """Ask the model for the next action. Returns the parsed JSON dict.
     Raises on repeated failure so the agent loop can log + skip the step."""
     user = (
@@ -228,7 +229,9 @@ def decide(task: str, obs: dict, logs: list[dict], memory: list[dict] | None = N
                 # Generous so a record_rows batch (rows of long names + URLs) is
                 # never cut off mid-JSON, which would fail to parse.
                 max_tokens=3000,
-                extra_body=_NO_THINK,
+                # Thinking ON lets the model actually reason (understand the task,
+                # adapt scroll, pick the right element) — slower but much smarter.
+                extra_body={"chat_template_kwargs": {"enable_thinking": think}},
             )
             raw = resp.choices[0].message.content or ""
             decision = _extract_json(raw)

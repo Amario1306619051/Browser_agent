@@ -11,6 +11,7 @@ const emptyHint = $("emptyHint");
 const artifacts = $("artifacts");
 const startUrlEl = $("startUrl");
 const unlimitedChk = $("unlimitedChk");
+const smartChk = $("smartChk");
 const scrollSpeed = $("scrollSpeed");
 const scrollDelay = $("scrollDelay");
 const toggleBtn = $("toggleBtn");
@@ -202,6 +203,7 @@ startBtn.onclick = async () => {
     start_url: startUrlEl.value.trim() || null,
     thread_id: activeThread,
     unlimited: unlimitedChk.checked,
+    smart: smartChk.checked,
     scroll_speed: scrollSpeed.value,
     scroll_delay: scrollDelay.value !== "" ? parseFloat(scrollDelay.value) : null,
   });
@@ -335,6 +337,8 @@ async function poll() {
 // ---- init --------------------------------------------------------------------
 unlimitedChk.checked = localStorage.getItem("ba_unlimited") === "1";
 unlimitedChk.addEventListener("change", () => localStorage.setItem("ba_unlimited", unlimitedChk.checked ? "1" : "0"));
+smartChk.checked = localStorage.getItem("ba_smart") !== "0";  // default ON
+smartChk.addEventListener("change", () => localStorage.setItem("ba_smart", smartChk.checked ? "1" : "0"));
 scrollSpeed.value = localStorage.getItem("ba_scrollSpeed") || "medium";
 scrollSpeed.addEventListener("change", () => localStorage.setItem("ba_scrollSpeed", scrollSpeed.value));
 scrollDelay.value = localStorage.getItem("ba_scrollDelay") || "";
