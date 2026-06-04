@@ -79,6 +79,7 @@ class AgentSession:
         self.thread_id = ""
         self.thread_memory: list[dict] = []
         self.thread_count = 0
+        self.unlimited = False  # ignore the MAX_STEPS cap for this run
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
     # phrase list covers English and Indonesian site labels to keep it useful on
@@ -155,7 +156,8 @@ class AgentSession:
         log.info("[%s] %s", kind, text)
 
     # ---- lifecycle -----------------------------------------------------------
-    async def start(self, task: str, start_url: str | None = None, thread_id: str | None = None) -> None:
+    async def start(self, task: str, start_url: str | None = None, thread_id: str | None = None,
+                    unlimited: bool = False) -> None:
         if self.state in ("running", "paused"):
             raise RuntimeError("A task is already running. Stop it before starting a new one.")
         # A previous run may still be finishing its terminal step (state already
@@ -177,6 +179,7 @@ class AgentSession:
         self.result = ""
         self._stop = False
         self._safety_ack = False
+        self.unlimited = bool(unlimited)
         self.data_rows = []
         self.data_columns = []
         self._row_seen = set()
@@ -206,7 +209,9 @@ class AgentSession:
 
     async def _loop(self) -> None:
         try:
-            for _ in range(config.MAX_STEPS):
+            # Unlimited mode: huge cap so the loop runs until done / stop / error.
+            cap = 10 ** 9 if self.unlimited else config.MAX_STEPS
+            for _ in range(cap):
                 # Manual-mode / pause gate. Loop only blocks here, between steps,
                 # so the page is never touched while the human drives it.
                 if not self.ai_enabled.is_set():
@@ -381,6 +386,7 @@ class AgentSession:
             "task": self.task,
             "step": self.step,
             "max_steps": config.MAX_STEPS,
+            "unlimited": self.unlimited,
             "ai_enabled": bool(self.ai_enabled and self.ai_enabled.is_set()),
             # Live page URL (reflects manual navigation); falls back to the loop's last.
             "url": self.browser.current_url() or self.last_url,

@@ -10,6 +10,7 @@ const transcript = $("transcript");
 const emptyHint = $("emptyHint");
 const artifacts = $("artifacts");
 const startUrlEl = $("startUrl");
+const unlimitedChk = $("unlimitedChk");
 const toggleBtn = $("toggleBtn");
 const stopBtn = $("stopBtn");
 const taskEl = $("task");
@@ -198,6 +199,7 @@ startBtn.onclick = async () => {
     task,
     start_url: startUrlEl.value.trim() || null,
     thread_id: activeThread,
+    unlimited: unlimitedChk.checked,
   });
   if (!res.ok) { alert("Failed to start: " + (res.error || "unknown")); startBtn.disabled = false; }
   else { taskEl.value = ""; autoGrow(); }
@@ -327,6 +329,8 @@ async function poll() {
 }
 
 // ---- init --------------------------------------------------------------------
+unlimitedChk.checked = localStorage.getItem("ba_unlimited") === "1";
+unlimitedChk.addEventListener("change", () => localStorage.setItem("ba_unlimited", unlimitedChk.checked ? "1" : "0"));
 activeThread = localStorage.getItem("ba_activeThread") || newThreadId();
 localStorage.setItem("ba_activeThread", activeThread);
 loadThreads();

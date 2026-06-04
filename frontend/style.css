@@ -105,6 +105,13 @@ body {
 .artifacts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
 .composer-tools { display: flex; align-items: center; gap: 8px; }
 .start-url { flex: 1; }
+.chk {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 12px; color: var(--muted); cursor: pointer;
+  background: #23262e; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+}
+.chk input { accent-color: var(--accent); margin: 0; cursor: pointer; }
+.chk:has(input:checked) { color: var(--accent); border-color: var(--accent-dim); }
 .composer-row { display: flex; align-items: flex-end; gap: 8px; }
 textarea#task {
   flex: 1; resize: none; min-height: 44px; max-height: 160px;

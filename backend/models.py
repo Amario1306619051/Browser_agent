@@ -8,6 +8,7 @@ class StartReq(BaseModel):
     task: str
     start_url: str | None = None
     thread_id: str | None = None
+    unlimited: bool = False
 
 
 class GotoReq(BaseModel):

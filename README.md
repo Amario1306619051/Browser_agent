@@ -87,7 +87,7 @@ window opens — that's where you can take over manually when needed.
 | `VLLM_BASE_URL` | `http://localhost:8000/v1` | OpenAI-compatible endpoint |
 | `VLLM_MODEL` | `your-model-name` | model name |
 | `VLLM_API_KEY` | `dummy` | API key (use `dummy` for local endpoints) |
-| `AGENT_MAX_STEPS` | `30` | max autonomous steps |
+| `AGENT_MAX_STEPS` | `30` | max autonomous steps (tick **♾️ Unlimited** in the UI to ignore the cap for a run) |
 | `AGENT_HEADLESS` | `false` | **keep false** so manual takeover works |
 | `AGENT_PORT` | `8001` | control-panel port |
 
