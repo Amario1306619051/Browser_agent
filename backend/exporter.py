@@ -34,6 +34,20 @@ def _cell(v):
     return str(v)
 
 
+def _image_path(v):
+    """If a cell value references a saved image in OUTPUT_DIR (a {"shot_of": N}
+    result like '/output/img_5.png'), return its absolute Path so XLSX can embed
+    the picture; else None (write it as plain text). Only files inside OUTPUT_DIR
+    qualify — `Path(...).name` strips any path so a cell can't reach elsewhere."""
+    if not isinstance(v, str):
+        return None
+    s = v.strip()
+    if not re.search(r"\.(png|jpe?g)$", s, re.IGNORECASE):
+        return None
+    p = config.OUTPUT_DIR / s.rsplit("/", 1)[-1]
+    return p if p.is_file() else None
+
+
 def save_image(data: bytes, filename: str = "shot", ext: str = "png") -> dict:
     """Write screenshot bytes to output/<name>.<ext>, never overwriting an
     existing file. Returns {filename, url}."""
@@ -75,12 +89,35 @@ def write_table(rows: list[dict], filename: str, fmt: str = "xlsx", columns=None
                 w.writerow({c: r.get(c, "") for c in cols})
     else:
         from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+        try:
+            from openpyxl.drawing.image import Image as XLImage
+        except Exception:  # noqa: BLE001 — no Pillow → degrade to path text
+            XLImage = None
 
         wb = Workbook()
         ws = wb.active
         ws.append(cols)
-        for r in rows:
-            ws.append([_cell(r.get(c, "")) for c in cols])
+        IMG_W = IMG_H = 130  # px thumbnail box embedded into the cell
+        for ri, r in enumerate(rows, start=2):
+            row_has_img = False
+            for ci, c in enumerate(cols, start=1):
+                v = r.get(c, "")
+                img = _image_path(v)
+                if img is not None and XLImage is not None:
+                    try:
+                        pic = XLImage(str(img))
+                        pic.width, pic.height = IMG_W, IMG_H
+                        ws.add_image(pic, f"{get_column_letter(ci)}{ri}")
+                        col = ws.column_dimensions[get_column_letter(ci)]
+                        col.width = max(col.width or 0, IMG_W / 7)  # px→Excel char-width
+                        row_has_img = True
+                        continue  # leave the cell empty; the picture floats over it
+                    except Exception:  # noqa: BLE001 — embed failed → write the path
+                        pass
+                ws.cell(row=ri, column=ci, value=_cell(v))
+            if row_has_img:
+                ws.row_dimensions[ri].height = IMG_H * 0.75  # px→points
         wb.save(path)
 
     return {

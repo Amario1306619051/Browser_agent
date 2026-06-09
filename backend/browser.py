@@ -29,11 +29,21 @@ log = logging.getLogger(__name__)
 # Injected into the page each observe(): tags visible interactive elements with a
 # stable data-ai-index (so we can act on them by index) and paints a labelled
 # overlay. Page text is captured BEFORE the overlay is added so it stays clean.
+#
+# The boxes are position:fixed (viewport coords) and a requestAnimationFrame loop
+# re-pins each one to its element's LIVE getBoundingClientRect every frame. That
+# way they track the element in real time no matter what moves it — window scroll,
+# an inner overflow:auto container (LinkedIn feed / Tokopedia / most SPAs, where
+# window.scrollY never changes), reflow, lazy-load, or CSS animation — instead of
+# being frozen at the positions captured the moment observe() ran (which lagged:
+# "bbox telat gak sesuai sama tombolnya").
 _OBSERVE_JS = r"""
 () => {
   const text = ((document.body && document.body.innerText) || '')
       .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').slice(0, 4000);
 
+  // Tear down the previous overlay AND its live-tracking loop/listeners first.
+  if (window.__aiOverlayCleanup) { try { window.__aiOverlayCleanup(); } catch (e) {} }
   document.querySelectorAll('[data-ai-index]').forEach(e => e.removeAttribute('data-ai-index'));
   const prev = document.getElementById('__ai_overlay__'); if (prev) prev.remove();
 
@@ -45,15 +55,16 @@ _OBSERVE_JS = r"""
 
   const overlay = document.createElement('div');
   overlay.id = '__ai_overlay__';
-  // position:absolute (in document coords) so the boxes scroll WITH the content
-  // instead of staying frozen at viewport positions while the page moves.
-  overlay.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;' +
+  // position:fixed → boxes are placed directly in viewport coords; the rAF loop
+  // below keeps them pinned to each element's live rect (see header comment).
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;' +
       'pointer-events:none;z-index:2147483647';
 
   const out = [];
+  const tracked = [];  // {el, box} pairs the live loop re-pins each frame
   let idx = 0;
   for (const el of nodes) {
-    if (el.disabled) continue;
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') continue;  // ARIA-disabled too; ignore 'false'/null
     const r = el.getBoundingClientRect();
     if (r.width < 5 || r.height < 5) continue;
     if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue;
@@ -70,24 +81,87 @@ _OBSERVE_JS = r"""
       tag: el.tagName.toLowerCase(),
       type: el.getAttribute('type') || '',
       label: label,
-      href: el.href || el.getAttribute('href') || ''  // el.href is absolute for links
+      w: Math.round(r.width), h: Math.round(r.height),  // size → lets the model tell a product card from a tiny icon (shot_of)
+      href: el.href || el.getAttribute('href') || '',  // el.href is absolute for links
+      role: el.getAttribute('role') || '',  // real control type behind a generic <div>/<span> (tab/menuitem/…)
+      // Behavior token — what a CLICK will DO, so the text brain understands the control
+      // BEFORE acting (it can't see it). Pure attribute reads (no layout), first match wins,
+      // '' when nothing notable. Rendered compactly + omit-when-empty in llm._elements_block.
+      act: (() => {
+        if (el.target === '_blank' || el.getAttribute('target') === '_blank') return 'tab';
+        if (el.tagName === 'SUMMARY') { const d = el.closest('details'); if (d) return d.open ? 'menu-open' : 'menu'; }
+        const ex = el.getAttribute('aria-expanded');
+        if (ex === 'true') return 'menu-open';   // already expanded → just read, don't re-click
+        if (ex === 'false') return 'menu';        // collapsed → a click reveals it
+        const hp = el.getAttribute('aria-haspopup'), ro = el.getAttribute('role') || '';
+        if ((hp && hp !== 'false') || ro === 'menu' || ro === 'listbox' || ro === 'combobox') return 'menu';
+        const pr = el.getAttribute('aria-pressed'), ck = el.getAttribute('aria-checked');
+        if (pr === 'true' || ck === 'true') return 'tgl:on';
+        if (pr === 'false' || ck === 'false') return 'tgl:off';   // 'mixed' → no token
+        if (el.type === 'submit' || (el.tagName === 'BUTTON' && el.closest('form'))) return 'submit';
+        const lab = (label || '').toLowerCase();
+        if (/(…|see more|show more|read more|selengkapnya)\s*$/.test(lab)) return 'expand';
+        return '';
+      })()
     });
 
     const box = document.createElement('div');
-    box.style.cssText = 'position:absolute;left:' + (r.left + window.scrollX) + 'px;top:' +
-        (r.top + window.scrollY) + 'px;width:' + r.width + 'px;height:' + r.height +
-        'px;border:2px solid #E8FF3A;box-sizing:border-box;';
+    box.style.cssText = 'position:fixed;left:' + r.left + 'px;top:' + r.top + 'px;width:' +
+        r.width + 'px;height:' + r.height + 'px;border:2px solid #E8FF3A;box-sizing:border-box;';
     const tagEl = document.createElement('div');
     tagEl.textContent = idx;
     tagEl.style.cssText = 'position:absolute;left:0;top:0;transform:translateY(-100%);' +
         'background:#E8FF3A;color:#000;font:bold 11px monospace;padding:0 3px;line-height:1.3;';
     box.appendChild(tagEl);
     overlay.appendChild(box);
+    tracked.push({ el: el, box: box });
 
     idx++;
     if (idx >= 120) break;
   }
   if (document.body) document.body.appendChild(overlay);
+
+  // ---- live tracking: pin each box to its element's current viewport rect -----
+  let rafId = 0;
+  const reposition = () => {
+    const W = window.innerWidth, H = window.innerHeight;
+    // Read ALL rects first, then write ALL styles — interleaving read/write would
+    // force a synchronous re-layout per element (thrash) on every frame.
+    const rects = new Array(tracked.length);
+    for (let i = 0; i < tracked.length; i++) rects[i] = tracked[i].el.getBoundingClientRect();
+    for (let i = 0; i < tracked.length; i++) {
+      const rr = rects[i], s = tracked[i].box.style;
+      // Hide boxes whose element scrolled out of view or got detached (0-size).
+      if (rr.width < 1 || rr.height < 1 ||
+          rr.bottom < 0 || rr.top > H || rr.right < 0 || rr.left > W) {
+        if (s.display !== 'none') s.display = 'none';
+        continue;
+      }
+      if (s.display === 'none') s.display = '';
+      s.left = rr.left + 'px'; s.top = rr.top + 'px';
+      s.width = rr.width + 'px'; s.height = rr.height + 'px';
+    }
+  };
+  const tick = () => {
+    if (!overlay.isConnected) { cleanup(); return; }
+    reposition();
+    rafId = requestAnimationFrame(tick);
+  };
+  // Capture-phase catches scrolls from inner containers too (scroll doesn't bubble,
+  // but a capture-phase listener on window sees every scroll on the page). passive:
+  // we only read rects, never preventDefault.
+  const onMove = () => reposition();
+  function cleanup() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    window.removeEventListener('scroll', onMove, true);
+    window.removeEventListener('resize', onMove, true);
+    if (window.__aiOverlayCleanup === cleanup) window.__aiOverlayCleanup = null;
+  }
+  window.addEventListener('scroll', onMove, { capture: true, passive: true });
+  window.addEventListener('resize', onMove, { capture: true, passive: true });
+  window.__aiOverlayCleanup = cleanup;
+  rafId = requestAnimationFrame(tick);
 
   return {
     url: location.href, title: document.title, elements: out, text: text,
@@ -169,6 +243,7 @@ class Browser:
         self._channel = None  # resolved browser channel (chrome / bundled)
         self.scroll_speed = config.SCROLL_SPEED  # slow | medium | fast
         self.scroll_delay = config.SCROLL_DELAY  # seconds; 0 = use the preset settle
+        self.scroll_distance = config.SCROLL_DISTANCE  # px/scroll; 0 = use the preset
 
     async def start(self) -> None:
         if self._started:
@@ -364,7 +439,8 @@ class Browser:
         async with self._lock:
             try:
                 await self.page.evaluate(
-                    "() => { const o = document.getElementById('__ai_overlay__'); if (o) o.remove(); }"
+                    "() => { if (window.__aiOverlayCleanup) { try { window.__aiOverlayCleanup(); } catch (e) {} }"
+                    " const o = document.getElementById('__ai_overlay__'); if (o) o.remove(); }"
                 )
             except Exception:
                 pass
@@ -381,10 +457,47 @@ class Browser:
             self._sync_page()
             return await self.page.screenshot(type="jpeg", quality=quality, full_page=False)
 
-    async def capture(self, index=None, region=None, full=False) -> bytes:
+    async def marked_shot(self, quality: int | None = None) -> bytes:
+        """JPEG of the current viewport WITH the numbered overlay boxes left visible
+        — the Set-of-Marks image the vision model reads (numbers = element indices).
+        The overlay is drawn by the most recent observe() and the rAF loop keeps it
+        pinned, so the marks line up with the elements at capture time."""
+        q = config.VISION_JPEG_QUALITY if quality is None else quality
+        async with self._lock:
+            self._sync_page()
+            return await self.page.screenshot(type="jpeg", quality=q, full_page=False)
+
+    # Given a too-small target element (e.g. the model picked a 17x17 wishlist icon
+    # instead of the product card for a shot_of), climb to the NEAREST ancestor that
+    # is at least min_w x min_h but not the whole grid/page (<= maxFrac of viewport),
+    # and return its viewport-clamped clip rect. Null if no good ancestor → caller
+    # falls back to the element itself. This is the auto safety-net for shot_of so a
+    # wrong-but-small index still yields the product card, not a blank icon.
+    _CARD_CLIP_JS = r"""
+    (el, a) => {
+      const vw = innerWidth, vh = innerHeight;
+      let n = el, best = null;
+      while (n && n !== document.body && n !== document.documentElement) {
+        const r = n.getBoundingClientRect();
+        if (r.width >= a.minW && r.height >= a.minH &&
+            r.width <= vw * a.maxFW && r.height <= vh * a.maxFH) { best = r; break; }
+        n = n.parentElement;
+      }
+      if (!best) return null;
+      const x = Math.max(0, best.left), y = Math.max(0, best.top);
+      const w = Math.min(best.right, vw) - x, h = Math.min(best.bottom, vh) - y;
+      return (w < 2 || h < 2) ? null : { x: x, y: y, width: w, height: h };
+    }
+    """
+
+    async def capture(self, index=None, region=None, full=False, min_w=0, min_h=0) -> bytes:
         """PNG screenshot of a specific element (by data-ai-index), a region clip
         {x,y,width,height}, the full page, or (default) the current viewport. The
-        AI overlay boxes are hidden during the shot so they don't pollute it."""
+        AI overlay boxes are hidden during the shot so they don't pollute it.
+
+        min_w/min_h (used by shot_of): if the indexed element is smaller than this,
+        climb to the nearest sizable ancestor (the product card) and clip that
+        instead — so a mis-picked tiny icon still captures the real product."""
         async with self._lock:
             self._sync_page()
             await self.page.evaluate(
@@ -393,6 +506,20 @@ class Browser:
             try:
                 if index is not None:
                     loc = self.page.locator(f'[data-ai-index="{int(index)}"]').first
+                    if min_w or min_h:
+                        try:
+                            await loc.scroll_into_view_if_needed(timeout=2000)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        try:
+                            clip = await loc.evaluate(
+                                self._CARD_CLIP_JS,
+                                {"minW": min_w, "minH": min_h, "maxFW": 0.85, "maxFH": 0.85},
+                            )
+                        except Exception:  # noqa: BLE001
+                            clip = None
+                        if clip and all(k in clip for k in ("x", "y", "width", "height")):
+                            return await self.page.screenshot(type="png", clip=clip)
                     return await loc.screenshot(type="png", timeout=8000)
                 if region and all(k in region for k in ("x", "y", "width", "height")):
                     clip = {k: float(region[k]) for k in ("x", "y", "width", "height")}
@@ -402,6 +529,82 @@ class Browser:
                 await self.page.evaluate(
                     "() => { const o = document.getElementById('__ai_overlay__'); if (o) o.style.display = ''; }"
                 )
+
+    async def _robust_click(self, loc) -> str:
+        """Click that survives elements which RESOLVE but never become 'actionable'.
+        On infinite-scroll feeds (LinkedIn) the constant reflow defeats Playwright's
+        stability check, and toggles like 'see more' can fail its hit-test — so a
+        plain click() just times out. We try a normal click first (realistic event
+        sequence, handles navigation/focus), and on failure fall back to firing the
+        element's OWN click() in the page — which bypasses stability AND hit-testing,
+        so it reaches the exact element whether it was reflowing or covered (a force
+        click can't: it would land on whatever sits on top). Returns the path used."""
+        try:
+            await loc.scroll_into_view_if_needed(timeout=2500)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            await loc.click(timeout=4000)
+            return "click"
+        except Exception:  # noqa: BLE001
+            pass
+        # Fallback 1: fire the element's OWN click() in-page — bypasses stability AND
+        # hit-testing, so it reaches the exact element whether it was reflowing or
+        # covered. Single fire (a toggle flips exactly once). Wrapped in a timeout:
+        # on a busy/navigating page evaluate() can otherwise hang the full 30s default
+        # (seen on LinkedIn feeds) and stall the whole step.
+        try:
+            await asyncio.wait_for(loc.evaluate("el => el.click()"), timeout=4)
+            return "dom-click"
+        except Exception:  # noqa: BLE001
+            pass
+        # Fallback 2: a real mouse click at the element's centre — a different path
+        # again (full pointer-event sequence some widgets require). Last resort; if the
+        # element has no box it's gone, so raise a clear error the model can act on.
+        box = await loc.bounding_box()
+        if not box:
+            raise RuntimeError("element is not clickable (no box — it may have detached or be hidden)")
+        await self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        return "coord-click"
+
+    # Cheap page fingerprint to tell whether a click actually did anything: URL +
+    # title + interactive-element count + scroll + text length. Compared before/after
+    # a click; identical = the click had no visible effect (wrong/covered element).
+    _FINGERPRINT_JS = (
+        "() => { const b = document.body; return location.href + '|' + document.title"
+        " + '|' + (b ? b.querySelectorAll('a,button,input,select,textarea,[role]').length : 0)"
+        " + '|' + Math.round(window.scrollY) + '|' + (b ? b.innerText.length : 0); }"
+    )
+
+    async def _fingerprint(self) -> str | None:
+        try:
+            return await self.page.evaluate(self._FINGERPRINT_JS)
+        except Exception:  # noqa: BLE001
+            return None
+
+    async def _settle(self, url0: str, floor_ms: int = 300, nav_ms: int = 600) -> None:
+        """Navigation-aware settle after a click / Enter, replacing a blind fixed
+        sleep. The common case — a click that focuses a field, opens a dropdown,
+        toggles 'see more', ticks a filter — does NOT navigate, so a flat 700/800ms
+        is pure waste; a real navigation can need longer. So:
+          1. a small floor (let JS handlers + the overlay rAF paint);
+          2. if a full-page navigation is committing, wait for domcontentloaded
+             (returns instantly when nothing is loading);
+          3. if the URL changed but no load fired (SPA route change — e.g. LinkedIn,
+             the case _robust_click exists for), a brief extra settle for the new view.
+        observe()'s own domcontentloaded wait then absorbs whatever remains. The
+        url0 snapshot is what makes this safe: without it we'd risk observe() reading
+        a stale/half-rendered DOM, and one stale read costs a whole ~5-10s step."""
+        await self.page.wait_for_timeout(floor_ms)
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=nav_ms)
+        except Exception:  # noqa: BLE001 — already loaded / nothing pending
+            pass
+        try:
+            if self.page.url != url0:
+                await self.page.wait_for_timeout(250)
+        except Exception:  # noqa: BLE001 — detached page mid-navigation
+            pass
 
     async def act(self, d: dict) -> str:
         async with self._lock:
@@ -414,16 +617,28 @@ class Browser:
 
             if a == "click":
                 i = int(d["index"])
-                await self.page.locator(f'[data-ai-index="{i}"]').first.click(timeout=8000)
-                await self.page.wait_for_timeout(700)
+                url0 = self.page.url
+                fp0 = await self._fingerprint()
+                loc = self.page.locator(f'[data-ai-index="{i}"]').first
+                how = await self._robust_click(loc)
+                await self._settle(url0)
                 self._sync_page()
-                return f"clicked [{i}]"
+                msg = f"clicked [{i}]" + ("" if how == "click" else f" ({how})")
+                # Tell the model when the click changed nothing — the #1 reason it gets
+                # "stuck": it clicks a wrong/covered element, sees no error, and repeats.
+                fp1 = await self._fingerprint()
+                if fp0 is not None and fp0 == fp1:
+                    msg += (" — but the page did NOT visibly change (same URL, elements & text). "
+                            "The click likely hit the wrong or a covered element. Do NOT just "
+                            "repeat it: use `look` to SEE the page, pick a DIFFERENT element index, "
+                            "or scroll/close an overlay first.")
+                return msg
 
             if a == "type":
                 i = int(d["index"])
                 text = str(d.get("text", ""))
                 loc = self.page.locator(f'[data-ai-index="{i}"]').first
-                await loc.click(timeout=8000)
+                await self._robust_click(loc)
                 # fill() only works on input/textarea/contenteditable; on a button
                 # or link it throws. Surface a clear error so the model retries with
                 # a 'click' (the error is fed back via history).
@@ -435,18 +650,21 @@ class Browser:
                     raise ValueError(f"element [{i}] is not a text field — use 'click', not 'type'")
                 await loc.fill(text)
                 if d.get("submit"):
+                    url0 = self.page.url
                     await loc.press("Enter")
-                    await self.page.wait_for_timeout(800)
+                    await self._settle(url0)
                     self._sync_page()
                 return f"typed into [{i}]: {text!r}" + (" + Enter" if d.get("submit") else "")
 
             if a == "scroll":
                 prof = self.SCROLL_PROFILES.get(self.scroll_speed, self.SCROLL_PROFILES["medium"])
-                # Adaptive: the model may set its own pixel amount; else the speed preset.
+                # Amount precedence: the user's FIXED setting wins when set (so "set the
+                # scroll px" is actually respected), else the model's adaptive amount,
+                # else the speed preset. (0 / unset falls through to the next.)
                 try:
-                    amt = int(d.get("amount") or prof["amount"])
+                    amt = int(self.scroll_distance or d.get("amount") or prof["amount"])
                 except (TypeError, ValueError):
-                    amt = prof["amount"]
+                    amt = self.scroll_distance or prof["amount"]
                 amt = max(50, min(abs(amt), 4000))
                 if str(d.get("direction", "down")).lower() == "up":
                     amt = -amt
@@ -456,15 +674,16 @@ class Browser:
                     if await self.page.evaluate(_SCROLL_JS, amt / prof["steps"]):
                         moved = True
                     await self.page.wait_for_timeout(prof["wait"])
-                # Settle pause, adaptive: the model's own "wait" (s) wins, else the
-                # user's delay setting, else the speed preset.
-                if d.get("wait") is not None:
+                # Settle pause precedence: the user's FIXED delay wins when set (so
+                # "set the delay myself" is respected), else the model's own "wait" (s),
+                # else the speed preset.
+                if self.scroll_delay:
+                    settle = int(min(max(self.scroll_delay, 0), 30) * 1000)
+                elif d.get("wait") is not None:
                     try:
                         settle = int(min(max(float(d["wait"]), 0), 30) * 1000)
                     except (TypeError, ValueError):
                         settle = prof["settle"]
-                elif self.scroll_delay:
-                    settle = int(min(max(self.scroll_delay, 0), 30) * 1000)
                 else:
                     settle = prof["settle"]
                 await self.page.wait_for_timeout(settle)

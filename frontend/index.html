@@ -38,10 +38,21 @@
             <option value="medium">Scroll: Medium</option>
             <option value="fast">Scroll: Fast</option>
           </select>
-          <input id="scrollDelay" class="num" type="number" min="0" max="30" step="0.5"
-                 placeholder="delay s" title="Pause after each scroll, in seconds (empty = use the preset)" />
+          <label class="num-field" title="Fixed pixels to scroll each step — overrides the AI and the speed preset. Empty = let the AI adapt / use the preset.">
+            ↕ Scroll
+            <input id="scrollAmount" type="number" min="0" max="4000" step="50" placeholder="auto" />
+            px
+          </label>
+          <label class="num-field" title="Pause after each scroll, in seconds. Empty = use the preset.">
+            ⏱ Delay
+            <input id="scrollDelay" type="number" min="0" max="30" step="0.5" placeholder="auto" />
+            s
+          </label>
           <label class="chk" title="LLM reasoning ON — smarter (understands the task, adapts) but ~3× slower per step">
             <input type="checkbox" id="smartChk" checked /> 🧠 Smart
+          </label>
+          <label id="visionLbl" class="chk" title="Always-on eyes — a vision model looks at the screen EVERY step so the agent sees layout, truncated text, modals and image-only pages. Most reliable, but ~2-4s slower per step. Uncheck for fast DOM-only.">
+            <input type="checkbox" id="visionChk" checked /> 👁 Vision
           </label>
           <label id="unlimitedLbl" class="chk" title="No 30-step limit — runs until the AI is done or you Stop">
             <input type="checkbox" id="unlimitedChk" /> ♾️ Unlimited

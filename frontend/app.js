@@ -12,7 +12,9 @@ const artifacts = $("artifacts");
 const startUrlEl = $("startUrl");
 const unlimitedChk = $("unlimitedChk");
 const smartChk = $("smartChk");
+const visionChk = $("visionChk");
 const scrollSpeed = $("scrollSpeed");
+const scrollAmount = $("scrollAmount");
 const scrollDelay = $("scrollDelay");
 const toggleBtn = $("toggleBtn");
 const stopBtn = $("stopBtn");
@@ -114,7 +116,7 @@ async function loadHistory(id) {
 // ---- transcript (chat bubbles) ----------------------------------------------
 const KIND_LABEL = {
   think: "💭", action: "▶", result: "✓", manual: "✋",
-  done: "★", error: "✕", info: "·", file: "📄",
+  done: "★", error: "✕", info: "·", file: "📄", vision: "👁",
 };
 
 function bubble(role, html) {
@@ -131,7 +133,7 @@ function liveSteps(logs) {
   const wrap = document.createElement("div");
   wrap.className = "steps";
   for (const l of logs) {
-    if (!["think", "action", "result", "manual", "error", "file", "done"].includes(l.kind)) continue;
+    if (!["think", "action", "result", "manual", "error", "file", "done", "vision"].includes(l.kind)) continue;
     const d = document.createElement("div");
     d.className = "step " + l.kind;
     d.textContent = (KIND_LABEL[l.kind] || "·") + " " + l.text;
@@ -204,7 +206,9 @@ startBtn.onclick = async () => {
     thread_id: activeThread,
     unlimited: unlimitedChk.checked,
     smart: smartChk.checked,
+    vision: visionChk.checked,
     scroll_speed: scrollSpeed.value,
+    scroll_distance: scrollAmount.value !== "" ? parseInt(scrollAmount.value, 10) : null,
     scroll_delay: scrollDelay.value !== "" ? parseFloat(scrollDelay.value) : null,
   });
   if (!res.ok) { alert("Failed to start: " + (res.error || "unknown")); startBtn.disabled = false; }
@@ -339,8 +343,12 @@ unlimitedChk.checked = localStorage.getItem("ba_unlimited") === "1";
 unlimitedChk.addEventListener("change", () => localStorage.setItem("ba_unlimited", unlimitedChk.checked ? "1" : "0"));
 smartChk.checked = localStorage.getItem("ba_smart") !== "0";  // default ON
 smartChk.addEventListener("change", () => localStorage.setItem("ba_smart", smartChk.checked ? "1" : "0"));
+visionChk.checked = localStorage.getItem("ba_vision") !== "0";  // default ON
+visionChk.addEventListener("change", () => localStorage.setItem("ba_vision", visionChk.checked ? "1" : "0"));
 scrollSpeed.value = localStorage.getItem("ba_scrollSpeed") || "medium";
 scrollSpeed.addEventListener("change", () => localStorage.setItem("ba_scrollSpeed", scrollSpeed.value));
+scrollAmount.value = localStorage.getItem("ba_scrollAmount") || "";
+scrollAmount.addEventListener("change", () => localStorage.setItem("ba_scrollAmount", scrollAmount.value));
 scrollDelay.value = localStorage.getItem("ba_scrollDelay") || "";
 scrollDelay.addEventListener("change", () => localStorage.setItem("ba_scrollDelay", scrollDelay.value));
 activeThread = localStorage.getItem("ba_activeThread") || newThreadId();

@@ -34,6 +34,20 @@ VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "your-model-name")
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
 
+# ===== Vision model (optional; the agent's "eyes") =====
+# An OpenAI-compatible VL endpoint. When set, the text model can call the `look`
+# action to actually SEE the page (Set-of-Marks screenshot) — useful when the DOM
+# text isn't enough (visual layout, ambiguous elements, a modal blocking content).
+# Leave VISION_BASE_URL / VISION_MODEL empty to disable vision entirely.
+VISION_BASE_URL = os.getenv("VISION_BASE_URL", "").strip()
+VISION_MODEL = os.getenv("VISION_MODEL", "").strip()
+VISION_API_KEY = os.getenv("VISION_API_KEY", os.getenv("VLLM_API_KEY", "dummy"))
+# JPEG quality of the screenshot sent to the VL model (legible marks vs payload).
+VISION_JPEG_QUALITY = max(30, min(int(os.getenv("VISION_JPEG_QUALITY", "70")), 95))
+# Cap the VL model's answer before it re-enters the text prompt (keeps it in line
+# with the other bounded prompt inputs: page text 2500, memory 600, etc.).
+VISION_MAX_CHARS = max(200, int(os.getenv("VISION_MAX_CHARS", "900")))
+
 # ===== Agent / browser tuning =====
 # Hard cap on autonomous steps so a confused model can't loop forever.
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "30"))
@@ -41,6 +55,9 @@ MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "30"))
 SCROLL_SPEED = os.getenv("AGENT_SCROLL_SPEED", "medium").strip().lower()
 # Pause (seconds) after each AI scroll. 0 = use the speed preset's settle pause.
 SCROLL_DELAY = float(os.getenv("AGENT_SCROLL_DELAY", "0") or 0)
+# Fixed AI scroll distance in px per scroll (overrides the speed preset's amount).
+# 0 = auto (use the speed preset / let the model decide). Per-task override in the UI.
+SCROLL_DISTANCE = int(os.getenv("AGENT_SCROLL_DISTANCE", "0") or 0)
 # Headless by default — the browser is streamed into the dashboard (no separate
 # window), and you take over right there in the live preview.
 HEADLESS = os.getenv("AGENT_HEADLESS", "true").strip().lower() in ("1", "true", "yes")

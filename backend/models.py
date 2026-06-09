@@ -11,7 +11,9 @@ class StartReq(BaseModel):
     unlimited: bool = False
     scroll_speed: str | None = None
     scroll_delay: float | None = None
+    scroll_distance: int | None = None
     smart: bool = True
+    vision: bool = True
 
 
 class GotoReq(BaseModel):

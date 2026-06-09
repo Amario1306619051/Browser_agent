@@ -99,6 +99,7 @@ body {
 .step.file { border-color: var(--blue); color: #9db8f0; }
 .step.done { border-color: var(--green); color: var(--green); }
 .step.error { border-color: var(--red); color: var(--red); }
+.step.vision { border-color: #c084fc; color: #d8b4fe; }
 
 /* ===== Composer ===== */
 .composer { border-top: 1px solid var(--line); padding: 12px 16px; background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
@@ -111,6 +112,18 @@ body {
 }
 .sel:focus { outline: none; border-color: var(--accent-dim); }
 .num { width: 80px; font-size: 12px; padding: 7px 9px; }
+/* Labelled number field (e.g. "↕ Scroll [__] px") so the control is easy to find. */
+.num-field {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12px; color: var(--muted);
+  background: #23262e; border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px;
+}
+.num-field input {
+  width: 52px; background: #1a1d23; color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; font-size: 12px; padding: 4px 6px;
+}
+.num-field input:focus { outline: none; border-color: var(--accent-dim); }
+.num-field:focus-within { color: var(--accent); border-color: var(--accent-dim); }
 .chk {
   display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
   font-size: 12px; color: var(--muted); cursor: pointer;

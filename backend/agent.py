@@ -13,6 +13,7 @@ Only ONE task runs at a time — this is a personal, single-browser tool.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import re
 import time
@@ -20,20 +21,37 @@ import time
 import config
 import exporter
 import llm
+import vision
 from browser import Browser
 from memory import store
 
 log = logging.getLogger(__name__)
 
 
-def _fmt_action(d: dict) -> str:
+def _fmt_action(d: dict, obs: dict | None = None) -> str:
     a = d.get("action")
+
+    def _lbl(idx) -> str:
+        # Resolve an element index to its label from THIS step's observation, so a
+        # logged action reads "click [5] \"Search\"" not a bare "click [5]". The
+        # bracketed index goes stale next step (the list is rebuilt every observe),
+        # so the label is what keeps the history line meaningful for self-checking.
+        if not obs:
+            return ""
+        for e in obs.get("elements", []):
+            if e.get("index") == idx:
+                return (e.get("label") or "").strip()[:60]
+        return ""
+
     if a == "navigate":
         return f"navigate → {d.get('url')}"
     if a == "click":
-        return f"click [{d.get('index')}]"
+        lbl = _lbl(d.get("index"))
+        return f"click [{d.get('index')}]" + (f' "{lbl}"' if lbl else "")
     if a == "type":
-        return f'type [{d.get("index")}] "{d.get("text", "")}"' + (" + Enter" if d.get("submit") else "")
+        lbl = _lbl(d.get("index"))
+        tgt = f"[{d.get('index')}]" + (f' "{lbl}"' if lbl else "")
+        return f'type {tgt} "{d.get("text", "")}"' + (" + Enter" if d.get("submit") else "")
     if a == "scroll":
         return f"scroll {d.get('direction', 'down')}"
     if a == "wait":
@@ -50,6 +68,8 @@ def _fmt_action(d: dict) -> str:
         if d.get("index") is not None:
             return f"screenshot element [{d.get('index')}]"
         return "screenshot (full page)" if d.get("full") else "screenshot (view)"
+    if a == "look":
+        return f"look: {d.get('question', '')}"
     if a == "done":
         return f"done: {d.get('answer', '')}"
     return str(a)
@@ -81,6 +101,28 @@ class AgentSession:
         self.thread_count = 0
         self.unlimited = False  # ignore the MAX_STEPS cap for this run
         self.smart = True       # LLM thinking ON (smarter, slower)
+        # Vision ("eyes"): let the text model call `look` to SEE the page via the VL
+        # model. last_vision holds the most recent observation, tagged with its step
+        # so decide() only feeds it forward while it's still fresh (and it's cleared
+        # the moment an action changes the page, since its numbered refs go stale).
+        # When ON, auto-look is coupled to the reasoning mode (see _needs_auto_look):
+        # thinking OFF → look EVERY step (the eyes stand in for the missing brain);
+        # thinking ON → look ON DEMAND only (sparse elements, a prior error, truncated
+        # content). The model can still call `look` itself either way. last_vision
+        # holds that observation; it's cleared after each act.
+        self.vision = True
+        self.last_vision = ""
+        self._vision_step = -10
+        # Circuit breaker: if the VL endpoint fails repeatedly, stop calling it for the
+        # rest of the run so a dead endpoint doesn't add a timeout to every step.
+        self._vision_fails = 0
+        # No-progress guard: the direction of the last scroll that hit the end (page
+        # didn't move). A repeat scroll the SAME way is short-circuited (see _loop).
+        self._scroll_stuck_dir: str | None = None
+        # No-progress guard for clicks: the index of the last click that changed nothing.
+        # A repeat click on the SAME index is intercepted — force the eyes + a nudge —
+        # instead of re-firing a click that already did nothing (the classic stuck loop).
+        self._click_noeffect_idx: int | None = None
 
     # Sensitive actions we never auto-confirm — pause for a human first. The
     # phrase list covers English and Indonesian site labels to keep it useful on
@@ -137,6 +179,33 @@ class AgentSession:
                 out[k] = v
         return out
 
+    async def _resolve_shots(self, row: dict, obs: dict) -> dict:
+        """Resolve {"shot_of": N} cells into a SAVED SCREENSHOT of element N — the
+        "image column is a picture, not a URL" case (e.g. a product photo the user
+        wants captured). Screenshots element N as PNG, writes it to output/, and
+        replaces the cell with the file's /output/ URL: CSV shows the path, XLSX
+        embeds the actual image (see exporter.write_table). Best-effort — a capture
+        that fails leaves the cell empty rather than dropping the whole row.
+
+        Async + page-touching, so it runs in the loop (not the sync _resolve_refs),
+        and only on rows already confirmed NEW so we never screenshot a duplicate."""
+        out = {}
+        for k, v in row.items():
+            if isinstance(v, dict) and "shot_of" in v:
+                idx = v.get("shot_of")
+                try:
+                    # min 80x80 → if the model picked a tiny icon, capture() climbs to
+                    # the nearest product-card-sized ancestor instead of a blank thumb.
+                    png = await self.browser.capture(index=idx, min_w=80, min_h=80)
+                    ref = exporter.save_image(png, f"img_{idx}")
+                    out[k] = ref["url"]
+                except Exception as e:  # noqa: BLE001 — bad index / detached node
+                    self._log("error", f"shot_of [{idx}] failed: {e}")
+                    out[k] = ""
+            else:
+                out[k] = v
+        return out
+
     def _remember(self) -> None:
         """Persist this finished task + its result into the thread's memory."""
         if self.thread_id and self.result:
@@ -174,7 +243,8 @@ class AgentSession:
     # ---- lifecycle -----------------------------------------------------------
     async def start(self, task: str, start_url: str | None = None, thread_id: str | None = None,
                     unlimited: bool = False, scroll_speed: str | None = None,
-                    scroll_delay: float | None = None, smart: bool = True) -> None:
+                    scroll_delay: float | None = None, smart: bool = True,
+                    vision_on: bool = True, scroll_distance: int | None = None) -> None:
         if self.state in ("running", "paused"):
             raise RuntimeError("A task is already running. Stop it before starting a new one.")
         # A previous run may still be finishing its terminal step (state already
@@ -198,6 +268,10 @@ class AgentSession:
         self._safety_ack = False
         self.unlimited = bool(unlimited)
         self.smart = bool(smart)
+        self.vision = bool(vision_on) and vision.enabled()
+        self.last_vision = ""
+        self._vision_step = -10
+        self._vision_fails = 0
         if scroll_speed in Browser.SCROLL_PROFILES:
             self.browser.scroll_speed = scroll_speed
         if scroll_delay is not None:
@@ -205,11 +279,18 @@ class AgentSession:
                 self.browser.scroll_delay = max(0.0, float(scroll_delay))
             except (TypeError, ValueError):
                 pass
+        if scroll_distance is not None:
+            try:
+                self.browser.scroll_distance = max(0, min(int(scroll_distance), 4000))
+            except (TypeError, ValueError):
+                pass
         self.data_rows = []
         self.data_columns = []
         self._row_seen = set()
         self.last_export = None
         self.shots = []
+        self._scroll_stuck_dir = None
+        self._click_noeffect_idx = None
         # Load short-term memory for this thread (earlier tasks → context).
         self.thread_id = store.norm(thread_id)
         self.thread_memory = store.load(self.thread_id) if self.thread_id else []
@@ -231,6 +312,82 @@ class AgentSession:
                 self._log("error", f"Failed to open {start_url}: {e}")
 
         self._runner = asyncio.create_task(self._loop())
+
+    # Expand/truncation controls whose presence means the on-screen text the task
+    # needs is probably cut off — worth a look to find which NUMBER reveals it.
+    _EXPAND_LABELS = (
+        "see more", "show more", "read more", "…more", "...more", "more",
+        "see full text", "lihat selengkapnya", "selengkapnya", "baca selengkapnya",
+        "tampilkan lebih", "lihat lainnya",
+    )
+
+    def _needs_auto_look(self, obs: dict) -> bool:
+        """Whether to spend an auto vision call THIS step. Vision is the agent's
+        eyes, but each call is a whole VL inference (~2-5s on a real page).
+
+        Coupled to the reasoning mode:
+          - thinking OFF (smart=False): the cheap no-reason decision leans hard on
+            the eyes, so look EVERY step to compensate for the missing brain;
+          - thinking ON (smart=True): on-demand only — the reasoning brain doesn't
+            need a fresh picture every step, so we look only when the DOM text is
+            likely NOT enough on its own:
+              1. the element list is near-empty (blank page / canvas / iframe-app /
+                 SPA still mounting) — the picture is the only way forward;
+              2. the previous act errored — let the eyes help diagnose / recover;
+              3. content the task needs is truncated behind an expand control.
+        Either way the model keeps the explicit `look` action, so it can still ask
+        for eyes whenever the text genuinely isn't enough."""
+        if not self.smart:
+            return True
+        els = obs.get("elements") or []
+        if len(els) < 3:
+            return True
+        last = next((l for l in reversed(self.logs) if l.get("kind") in ("result", "error")), None)
+        if last is not None and last.get("kind") == "error":
+            return True
+        text = (obs.get("text") or "").rstrip()
+        if text.endswith("…") or text.endswith("..."):
+            return True
+        for e in els:
+            if (e.get("label") or "").strip().lower() in self._EXPAND_LABELS:
+                return True
+        return False
+
+    async def _do_look(self, question: str, obs: dict) -> bool:
+        """Capture a Set-of-Marks screenshot (numbered overlay) and ask the VL model
+        `question`. The answer is stored as last_vision and fed into the next
+        decide(). Best-effort — never raises into the loop."""
+        if not self.vision:
+            return False
+        try:
+            png = await self.browser.marked_shot()
+        except Exception as e:  # noqa: BLE001
+            self._log("error", f"vision screenshot failed: {e}")
+            return False
+        b64 = base64.b64encode(png).decode()
+        # vision.look is a blocking HTTP call — run it off the event loop so the live
+        # stream and status endpoint stay responsive while the VL model thinks.
+        ans = await asyncio.to_thread(
+            vision.look, self.task, question, b64, obs.get("elements"), obs.get("url", "")
+        )
+        # Cap the note before it re-enters the text prompt (every other prompt input
+        # is bounded too) so a runaway VL response can't blow up the next call.
+        ans = (ans or "").strip()[:config.VISION_MAX_CHARS]
+        if ans:
+            self._vision_fails = 0
+            self.last_vision = ans
+            self._vision_step = self.step
+            self._log("vision", ans)
+            return True
+        # No answer (timeout / endpoint down / empty). After a couple in a row, stop
+        # calling the VL model for the rest of this run so it can't stall every step.
+        self._vision_fails += 1
+        if self._vision_fails >= 2:
+            self.vision = False
+            self._log("error", "👁 vision disabled for this run — the VL endpoint isn't responding. Continuing DOM-only.")
+        else:
+            self._log("error", "vision returned nothing — proceeding with the DOM text only")
+        return False
 
     async def _loop(self) -> None:
         try:
@@ -254,8 +411,31 @@ class AgentSession:
                 obs = await self.browser.observe()
                 self.last_url, self.last_title = obs.get("url", ""), obs.get("title", "")
 
+                # On-demand eyes: only spend a vision call when the DOM text is likely
+                # insufficient (sparse/odd element list, the last act errored, or content
+                # is truncated behind an expand control) — not blindly every step, which
+                # doubled per-step latency for no gain on DOM-clear pages. The model can
+                # still request `look` itself for anything else. The circuit breaker in
+                # _do_look turns vision off if the VL endpoint stops answering.
+                if self.vision and self._needs_auto_look(obs):
+                    await self._do_look(
+                        f"For this task: {self.task}\nBriefly (1-3 sentences): the page's "
+                        "state; is any text the task needs truncated, and which NUMBER "
+                        "expands it ('…more'/'see more'); is anything (modal, popup, cookie "
+                        "banner, login) covering the content, and which NUMBER dismisses it; "
+                        "which numbered elements matter for the next step.",
+                        obs,
+                    )
+
+                # Feed this step's fresh visual note into the decision (cleared after the
+                # act, so a note whose numbered refs predate a page change is never reused).
+                vnote = self.last_vision if (self.last_vision and self.step - self._vision_step <= 1) else ""
+                # Reasoning stays full (smart=ON) — it's the brain; cutting it made the
+                # agent noticeably worse at picking the right action. The speedup comes
+                # from on-demand vision above, not from dumbing the decision down.
                 try:
-                    decision = llm.decide(self.task, obs, self.logs, self.thread_memory, self.smart)
+                    decision = llm.decide(self.task, obs, self.logs, self.thread_memory,
+                                          self.smart, vnote, self.vision)
                 except Exception as e:  # noqa: BLE001
                     self._log("error", f"LLM failed to decide an action: {e}")
                     await asyncio.sleep(1.0)
@@ -263,7 +443,7 @@ class AgentSession:
 
                 if decision.get("thought"):
                     self._log("think", str(decision["thought"]))
-                self._log("action", _fmt_action(decision))
+                self._log("action", _fmt_action(decision, obs))
 
                 action = decision.get("action")
 
@@ -288,11 +468,20 @@ class AgentSession:
                             if not isinstance(r, dict):
                                 continue
                             r = self._resolve_refs(r, obs)  # {"href_of": N} → real URL
-                            sig = tuple(sorted((str(k), str(v).strip()) for k, v in r.items()))
+                            # Dedup on the STABLE text columns only — exclude {"shot_of": N}
+                            # image cells, whose element index drifts across scrolls and
+                            # whose saved filename is unique per capture (would defeat dedup).
+                            sig = tuple(sorted(
+                                (str(k), str(v).strip()) for k, v in r.items()
+                                if not (isinstance(v, dict) and "shot_of" in v)
+                            ))
                             if sig in self._row_seen:  # dedupe re-records across scrolls
                                 dup += 1
                                 continue
                             self._row_seen.add(sig)
+                            # Only NOW (row confirmed new) capture screenshots, so we never
+                            # screenshot a duplicate. {"shot_of": N} → saved /output/ image.
+                            r = await self._resolve_shots(r, obs)
                             self.data_rows.append(r)
                             for k in r.keys():
                                 if str(k) not in self.data_columns:
@@ -334,19 +523,72 @@ class AgentSession:
                         self._log("error", f"screenshot failed: {e}")
                     continue
 
+                if action == "look":
+                    if not self.vision:
+                        self._log("error", "look rejected: vision is off — rely on the DOM text + element list")
+                    else:
+                        await self._do_look(decision.get("question", ""), obs)
+                    continue
+
                 # Sensitive-action guard: pause once for the human. On resume the
                 # loop re-decides; if it picks the same flagged action again the ack
                 # lets it through (reset below), so we never loop forever on it.
                 if self._is_dangerous(decision, obs) and not self._safety_ack:
                     self.ai_enabled.clear()
                     self._safety_ack = True
-                    self._log("manual", f"⏸ Sensitive action detected ({_fmt_action(decision)}) — AI paused for your confirmation. Click Resume AI if you really want to proceed.")
+                    self._log("manual", f"⏸ Sensitive action detected ({_fmt_action(decision, obs)}) — AI paused for your confirmation. Click Resume AI if you really want to proceed.")
                     continue
                 self._safety_ack = False
+
+                # No-progress guard: if the previous scroll THIS direction already hit
+                # the end (browser.act reported the page didn't move), don't burn another
+                # scroll + settle wait re-confirming it — nudge the model to do something
+                # else. Hard evidence, so near-zero false positives (a scroll up resets).
+                if action == "scroll":
+                    dirn = str(decision.get("direction", "down")).lower()
+                    if self._scroll_stuck_dir == dirn:
+                        self._log("result", f"skipped scroll {dirn}: already at the end last time (page did not move) — "
+                                            "do something else now (expand/click an item, paginate, export, or done).")
+                        continue
+
+                # No-progress guard for clicks: the model is about to re-click the exact
+                # element whose last click changed nothing → that path is a dead loop.
+                # Intercept it: don't re-fire; force the eyes (if on) so next step the
+                # model can SEE what's wrong, and nudge it to pick a different element.
+                if action == "click" and decision.get("index") == self._click_noeffect_idx:
+                    self._log("result", f"skipped re-click [{decision.get('index')}]: the last click on it "
+                                        "changed nothing — pick a DIFFERENT element, close any overlay, or scroll.")
+                    self._click_noeffect_idx = None  # one-shot, so we don't loop on the guard itself
+                    if self.vision:
+                        await self._do_look(
+                            f"For this task: {self.task}\nClicking element "
+                            f"[{decision.get('index')}] did nothing. What is actually there — is it "
+                            "covered by a popup/modal/overlay (which NUMBER closes it)? Which NUMBER "
+                            "is the correct element to click instead?",
+                            obs,
+                        )
+                    continue
 
                 try:
                     res = await self.browser.act(decision)
                     self._log("result", res)
+                    # The act changed the page → the element indices the vision note
+                    # referenced are now stale. Drop it so it can't mislead next step.
+                    self.last_vision = ""
+                    # Track whether a scroll hit the end, so the next same-direction
+                    # scroll is short-circuited above (any other action resets it).
+                    if action == "scroll":
+                        self._scroll_stuck_dir = (str(decision.get("direction", "down")).lower()
+                                                  if "— page did NOT move" in res else None)
+                    else:
+                        self._scroll_stuck_dir = None
+                    # Remember a click that changed nothing, so an immediate re-click of
+                    # the SAME index is intercepted above (any other action clears it).
+                    if action == "click":
+                        self._click_noeffect_idx = (decision.get("index")
+                                                    if "did NOT visibly change" in res else None)
+                    else:
+                        self._click_noeffect_idx = None
                 except Exception as e:  # noqa: BLE001
                     self._log("error", f"Action failed: {e}")
             else:
@@ -417,6 +659,7 @@ class AgentSession:
             "step": self.step,
             "max_steps": config.MAX_STEPS,
             "unlimited": self.unlimited,
+            "vision": self.vision,
             "ai_enabled": bool(self.ai_enabled and self.ai_enabled.is_set()),
             # Live page URL (reflects manual navigation); falls back to the loop's last.
             "url": self.browser.current_url() or self.last_url,
