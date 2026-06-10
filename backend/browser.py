@@ -561,9 +561,14 @@ class Browser:
         # Fallback 2: a real mouse click at the element's centre — a different path
         # again (full pointer-event sequence some widgets require). Last resort; if the
         # element has no box it's gone, so raise a clear error the model can act on.
-        box = await loc.bounding_box()
+        # bounding_box() MUST carry a short timeout: its 30s default otherwise FREEZES
+        # the whole step on a detached/animating node (the "berhenti sendiri" hang).
+        try:
+            box = await loc.bounding_box(timeout=2000)
+        except Exception:  # noqa: BLE001 — timeout / detached
+            box = None
         if not box:
-            raise RuntimeError("element is not clickable (no box — it may have detached or be hidden)")
+            raise RuntimeError("element is not clickable (no box — it may have detached or be hidden); pick a different element")
         await self.page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         return "coord-click"
 
