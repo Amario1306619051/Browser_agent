@@ -471,8 +471,13 @@ class AgentSession:
                             # Dedup on the STABLE text columns only — exclude {"shot_of": N}
                             # image cells, whose element index drifts across scrolls and
                             # whose saved filename is unique per capture (would defeat dedup).
+                            # Normalize each value (casefold + collapse all whitespace,
+                            # incl. NBSP) so trivial variance across scrolls — a double
+                            # space, a stray \xa0, different casing — doesn't slip a
+                            # duplicate row through. Only the SIGNATURE is normalized;
+                            # the original row is what gets appended.
                             sig = tuple(sorted(
-                                (str(k), str(v).strip()) for k, v in r.items()
+                                (str(k), " ".join(str(v).split()).casefold()) for k, v in r.items()
                                 if not (isinstance(v, dict) and "shot_of" in v)
                             ))
                             if sig in self._row_seen:  # dedupe re-records across scrolls
@@ -585,8 +590,22 @@ class AgentSession:
                     # Remember a click that changed nothing, so an immediate re-click of
                     # the SAME index is intercepted above (any other action clears it).
                     if action == "click":
-                        self._click_noeffect_idx = (decision.get("index")
-                                                    if "did NOT visibly change" in res else None)
+                        noeffect = "did NOT visibly change" in res
+                        self._click_noeffect_idx = decision.get("index") if noeffect else None
+                        # A dead click is logged as a 'result', not an 'error', so in smart
+                        # mode _needs_auto_look won't summon the eyes next step — and the model
+                        # may then pick a DIFFERENT wrong element, so the re-click guard never
+                        # fires either. Look NOW (while indices are still valid — the page
+                        # didn't change) so the next decide sees what's wrong. Fast mode
+                        # (smart=False) already looks every step, so gate on self.smart.
+                        if noeffect and self.smart and self.vision:
+                            await self._do_look(
+                                f"For this task: {self.task}\nClicking element "
+                                f"[{decision.get('index')}] changed nothing on the page. Is a "
+                                "popup/modal/overlay covering it (which NUMBER closes it)? Which "
+                                "NUMBER is the correct element to click instead?",
+                                obs,
+                            )
                     else:
                         self._click_noeffect_idx = None
                 except Exception as e:  # noqa: BLE001

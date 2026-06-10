@@ -254,19 +254,64 @@ def _history_block(logs: list[dict]) -> str:
     return "\n".join(f"- {l['text']}" for l in recent)
 
 
+# URL schemes that aren't real web navigation (mirrors browser._BAD_SCHEME_RE) — so a
+# bad navigate URL is caught pre-flight (in-call retry) not at goto() (a lost step).
+_BAD_URL_SCHEME = re.compile(
+    r"^\s*(javascript|data|file|blob|vbscript|about|chrome|chrome-extension|ftp):", re.IGNORECASE)
+# <input type=...> values that are NOT fillable text fields.
+_NON_TEXT_INPUT = {"checkbox", "radio", "button", "submit", "reset", "file", "range", "color", "image"}
+
+
 def _validate(decision: dict, obs: dict) -> None:
-    """Reject malformed decisions so the call retries instead of failing at the
-    Playwright layer (bad index -> 8s timeout; missing url -> goto('')) ."""
+    """Reject malformed decisions so the call self-corrects via the in-call retry,
+    instead of failing at the Playwright layer (bad index -> timeout; type into a
+    button -> a wasted click+throw; prose URL -> ~30s DNS hang). Each lost step costs
+    ~5-10s, so catching it here — same call — is a real accuracy win. The word 'index'
+    in an error triggers the valid-index dump in the retry."""
     action = decision.get("action")
+    by_idx = {e.get("index"): e for e in obs.get("elements", [])}
     if action in ("click", "type"):
         idx = decision.get("index")
-        valid = {e.get("index") for e in obs.get("elements", [])}
-        if isinstance(idx, bool) or not isinstance(idx, int) or idx not in valid:
+        if isinstance(idx, bool) or not isinstance(idx, int) or idx not in by_idx:
             raise ValueError(f"action '{action}' has invalid/out-of-range index {idx!r}")
-    if action == "navigate" and not str(decision.get("url", "")).strip():
-        raise ValueError("action 'navigate' is missing 'url'")
-    if action == "record_rows" and not isinstance(decision.get("rows"), list):
-        raise ValueError("action 'record_rows' requires a 'rows' array")
+        if action == "type":
+            # Guard-first: reject ONLY elements that are provably not text inputs, so a
+            # <div contenteditable> / <input role=combobox> search box (which the DOM
+            # snapshot can't always flag) still passes. NEVER reject on the [act] token
+            # — menu/menu-open legitimately appear on real combobox search inputs.
+            el = by_idx.get(idx, {})
+            tag = (el.get("tag") or "").lower()
+            etype = (el.get("type") or "").lower()
+            if tag in ("a", "button", "select", "summary") or (tag == "input" and etype in _NON_TEXT_INPUT):
+                raise ValueError(f"index {idx} (<{tag}>) is not a text field — use 'click', not 'type'")
+    elif action == "navigate":
+        url = str(decision.get("url", "")).strip()
+        if not url:
+            raise ValueError("action 'navigate' is missing 'url'")
+        if _BAD_URL_SCHEME.match(url):
+            raise ValueError(f"navigate url scheme not allowed ({url[:40]!r}) — give a real http(s) URL")
+        if " " in url and "://" not in url:
+            raise ValueError(f"navigate url looks like prose, not a URL ({url[:60]!r}) — give a real URL or use the site's search box")
+    elif action == "record_rows":
+        rows = decision.get("rows")
+        if not isinstance(rows, list):
+            raise ValueError("action 'record_rows' requires a 'rows' array")
+        valid = set(by_idx)
+        for r in rows:
+            if not isinstance(r, dict) or not r:
+                raise ValueError("record_rows has an empty row — fill the requested columns with the item's real values")
+            usable = False  # a row needs ≥1 real text value or a valid ref cell
+            for v in r.values():
+                if isinstance(v, dict) and ("href_of" in v or "shot_of" in v):
+                    refk = "href_of" if "href_of" in v else "shot_of"
+                    ri = v.get(refk)
+                    if isinstance(ri, bool) or not isinstance(ri, int) or ri not in valid:
+                        raise ValueError(f"record_rows {refk} index {ri!r} is not a current element index — re-pick from the list shown now")
+                    usable = True
+                elif str(v).strip():
+                    usable = True
+            if not usable:
+                raise ValueError("record_rows row has no usable values — give each column the item's real text or a valid {\"href_of\"/\"shot_of\": N}")
 
 
 def _memory_block(memory: list[dict] | None) -> str:
@@ -295,12 +340,21 @@ def decide(task: str, obs: dict, logs: list[dict], memory: list[dict] | None = N
     off); we tell the model so it doesn't keep emitting look and burning steps."""
     vision_block = ""
     if vision and vision.strip():
-        vision_block = (
-            "VISUAL OBSERVATION (a vision model just looked at the CURRENT screen — "
-            "trust it for layout / which numbered element to use / what's covering the "
-            "page; ignore it if you've since navigated):\n"
-            f"{vision.strip()}\n\n"
-        )
+        if think:
+            head = ("VISUAL OBSERVATION (a vision model just looked at the CURRENT screen — "
+                    "trust it for layout / which numbered element to use / what's covering the "
+                    "page; ignore it if you've since navigated):\n")
+        else:
+            # Fast mode (no step-by-step reasoning): the eyes ARE the substitute brain,
+            # so make them binding on element SELECTION — the model can't arbitrate a
+            # DOM-label-vs-vision conflict without reasoning. Scope strictly to which
+            # number / what's covering the page; task-completion stays the model's call.
+            head = ("VISUAL OBSERVATION (a vision model just looked at the CURRENT screen). You "
+                    "are in FAST mode, so this is AUTHORITATIVE on WHICH numbered element to act "
+                    "on and what is covering the page: if it names a number, use THAT number; if "
+                    "it conflicts with a DOM label, FOLLOW THE OBSERVATION. (It does not decide "
+                    "whether the task is done — that stays your call.):\n")
+        vision_block = head + f"{vision.strip()}\n\n"
     elif not vision_available:
         vision_block = (
             "NOTE: the 'look' action is DISABLED right now — do not use it; rely on the "

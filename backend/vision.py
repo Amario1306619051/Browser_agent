@@ -55,12 +55,14 @@ _SYSTEM = (
 )
 
 
-def _elements_text(elements: list[dict]) -> str:
-    lines = []
-    for e in (elements or [])[:120]:
-        label = (e.get("label") or "").strip()
-        lines.append(f'[{e.get("index")}] {e.get("tag", "")} "{label}"')
-    return "\n".join(lines) or "(none detected in the DOM)"
+def _elements_text(elements: list[dict], url: str = "") -> str:
+    """Render the element list for the eyes using the SAME format the text brain reads
+    (llm._elements_block: index, tag/role, label, (#k/N), WxH, href, [act]). Sharing one
+    vocabulary means when the VL model says 'use number N' it maps to the exact element
+    the brain will act on — no eyes/brain mismatch. No import cycle: llm imports config
+    only, never vision. The 120-cap lives here (the brain caps elsewhere)."""
+    import llm
+    return llm._elements_block((elements or [])[:120], url)
 
 
 def look(task: str, question: str, image_b64: str, elements: list[dict] | None = None,
@@ -74,7 +76,7 @@ def look(task: str, question: str, image_b64: str, elements: list[dict] | None =
     user_text = (
         f"The agent's overall TASK: {task}\n"
         f"Current URL: {url}\n\n"
-        f"Elements the DOM detected (number: tag \"label\"):\n{_elements_text(elements)}\n\n"
+        f"Elements the DOM detected (number: tag \"label\" (#k/N) WxH -> href [behavior]):\n{_elements_text(elements, url)}\n\n"
         f"AGENT'S QUESTION: {q}"
     )
     try:
